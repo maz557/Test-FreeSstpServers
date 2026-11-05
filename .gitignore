@@ -1,0 +1,23 @@
+# Generated reports and snapshots
+sstp_test_results_*.csv
+sstp_server_list_*.csv
+sstp_existing_profile_check_*.csv
+sstp_existing_profiles_*.csv
+*.log
+
+# Local HTML captures and downloads
+*.html
+*.htm
+
+# PowerShell backups
+*.ps1.bak
+*.ps1.bak2
+
+# Editor and OS files
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
+.DS_Store
