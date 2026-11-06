@@ -4,8 +4,6 @@
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-> **Why v16.1?** This release deliberately keeps the proven v16 speed-test engine. A sample counts when curl receives real bytes over HTTP 2xx, even if the full 10 MB request is cut short by the timeout. The v17/v17.1 engine required a complete 10 MB download, which rejected slow but perfectly usable free SSTP servers. v16.1 adds the existing-profile maintenance feature on top of the v16 engine, with stricter removal rules.
-
 ---
 
 ## Contents

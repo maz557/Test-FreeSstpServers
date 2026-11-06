@@ -160,7 +160,7 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I24 | Temporary profile left behind | `RAS_CLEANUP_INCOMPLETE` and stop |
 | I25 | Slow server with a partial download | `WORKING_TUNNEL_AND_INTERNET` with `DownloadComplete=False` |
 
-> **Important:** I25 encodes the v16.1 rule. A partial download that produced real bytes is accepted. Do not require a complete 10 MB transfer.
+> **Important:** I25 encodes the v16.1 rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
 Use VM snapshots for I23 and I24; they change real RAS state.
 

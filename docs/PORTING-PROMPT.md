@@ -21,7 +21,7 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 - The tool is **Windows-only** because it uses `VpnClient`, `rasdial.exe`, the RAS phonebook, and Windows public-IP behavior. A non-Windows port can reuse the parsers, scorer, CSV writer, and CLI, but cannot provide the VPN workflows without a Windows host or a Windows VM.
 - `docs/SPECIFICATION.md` is the **normative contract**. If the reference script and the specification ever disagree, stop and report the conflict; do not guess.
 - The reference script is **behavior to match**, not code to translate line by line. A port may use different modules, classes, or idioms.
-- The published v16.1 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full 10 MB transfer is cut short. `DownloadComplete=False` must not reject the server.
+- The published v16.1 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
 - Existing-profile deletion is a destructive operation. It requires an exact uppercase `YES`, and `-ReportOnly` must never delete.
 
 ---
@@ -58,7 +58,7 @@ Non-negotiable contract:
 - Validation rules V1 through V10, in the same order, with the same messages.
 - Exact status, verdict, planned-action, and action-taken strings. Do not translate or rename them.
 - CSV schemas and column order: 43 columns for new-server results, 45 for existing-profile checks, 8 for snapshots, 7 for inventory. Use invariant culture, CRLF, and True/False booleans.
-- Partial downloads count when curl receives real bytes over HTTP 2xx, even when DownloadComplete=False. Do not require a complete 10 MB transfer.
+- Partial downloads count when curl receives real bytes over HTTP 2xx, even when DownloadComplete=False. Do not require the full requested byte count.
 - Existing profiles are removed only after a summary and an exact uppercase YES. -ReportOnly never deletes. INCONCLUSIVE always maps to KEEP.
 - Only one VPN connection may be active at a time. Clean up temporary profiles in a finally block. Pause later dials after an uncertain RAS state.
 - Install only WORKING_TUNNEL_AND_INTERNET servers. Deduplicate by host:port. Never overwrite an existing profile.
@@ -179,7 +179,7 @@ A port is ready for review only when all of the following are true:
 
 | Mistake | Why it is wrong |
 |---|---|
-| Requiring a complete 10 MB download | This is v17 behavior; v16.1 accepts real partial bytes. |
+| Requiring a complete download | Violates the v16.1 rule: real partial bytes are accepted. |
 | Translating status strings or CSV headers | Breaks compatibility and golden tests. |
 | Treating `INCONCLUSIVE` as removable | Violates the safety contract. |
 | Accepting `yes`, `Yes`, or `Y` for deletion | Only exact uppercase `YES` is allowed. |

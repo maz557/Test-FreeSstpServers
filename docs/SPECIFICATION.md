@@ -85,7 +85,7 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 
 ### 1.3. Out of scope
 
-- The v17/v17.1 requirement that a download sample must transfer the complete 10 MB. **v16.1 deliberately accepts partial downloads with real bytes.**
+- Requiring the full requested download size before accepting a sample. **v16.1 deliberately accepts partial downloads with real bytes.**
 - Non-SSTP VPN protocols.
 - A graphical user interface.
 - A background service or multi-user server.
@@ -353,16 +353,6 @@ Summary → (optional) YES → Remove in the original scope → CSV
 | `v-dot-pn-ams2.opengw.net` | List source | VPN Gate | Warning; continue with primary |
 | `raw.githubusercontent.com` | List source | Final fallback | Warning; continue |
 | `r.jina.ai` | Mirror | Readable-text fallback | Warning |
-
-### 2.12. Deliberate differences from v17/v17.1
-
-| Topic | v16.1 (target) | v17/v17.1 (out of scope) |
-|---|---|---|
-| Download sample criterion | Any real bytes over HTTP 2xx | Requires a complete 10 MB download |
-| Slow but healthy server | Accepted; `DownloadComplete=false` | Rejected |
-| New-server test engine | v16 | Changed |
-| Existing-profile phase | Present (backported with stricter removal) | Present |
-| Purpose of this document | Reimplement v16.1 | Comparison reference |
 
 ---
 
@@ -1349,7 +1339,7 @@ Seconds = round(seconds, 2)
 Complete = (not TimedOut) and ExitCode == 0 and bytes >= DownloadBytes * 0.95
 ```
 
-**Critical difference from v17:**
+**Partial-download rule:**
 
 - `Complete=false` does **not** reject the sample.
 - Every sample with real bytes and HTTP 2xx enters the median.

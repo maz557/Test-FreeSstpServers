@@ -26,8 +26,8 @@ semantic versioning for its public releases.
 ### Changed
 
 - Existing-profile verification uses the v16 speed-test engine: a sample with
-  real bytes over HTTP 2xx is accepted even when the full 10 MB download does
-  not finish before the timeout.
+  real bytes over HTTP 2xx is accepted even when the full requested download
+  does not finish before the timeout.
 - All temporary profiles are removed in a `finally` block, after confirming
   disconnection.
 - Later VPN dials are paused when RAS state is uncertain.
