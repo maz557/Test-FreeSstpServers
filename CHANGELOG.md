@@ -40,6 +40,14 @@ semantic versioning for its public releases.
   list is complete.
 - CSV column order matches the actual PowerShell 7.6.9 serialization order.
 
+### Documentation
+
+- Added an authorship note: the maintainer designed and tested the program;
+  AI wrote the code under the maintainer's direction.
+- Added `docs/PORTING-PROMPT.md`, a copy-paste brief for generating a
+  behavior-compatible port in another programming language.
+- Linked the porting prompt from the README, specification, and porting guide.
+
 ### Known limitations
 
 - Windows 10/11 only.

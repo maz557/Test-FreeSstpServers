@@ -1,5 +1,7 @@
 # Test-FreeSstpServers v16.1
 
+> **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
+
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
 > **Why v16.1?** This release deliberately keeps the proven v16 speed-test engine. A sample counts when curl receives real bytes over HTTP 2xx, even if the full 10 MB request is cut short by the timeout. The v17/v17.1 engine required a complete 10 MB download, which rejected slow but perfectly usable free SSTP servers. v16.1 adds the existing-profile maintenance feature on top of the v16 engine, with stricter removal rules.
@@ -240,6 +242,7 @@ All 41 parameters, their ranges, defaults, and validation rules are documented i
 ├── docs/
 │   ├── SPECIFICATION.md             Normative reimplementation specification
 │   ├── PORTING.md                   Porting guide and API mapping
+│   ├── PORTING-PROMPT.md            Ready-to-use AI prompt for ports
 │   └── TESTING.md                   Test strategy and acceptance criteria
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -252,6 +255,7 @@ All 41 parameters, their ranges, defaults, and validation rules are documented i
 
 - [Specification](docs/SPECIFICATION.md) — behavior contract, status matrices, CSV schemas, safety rules.
 - [Porting guide](docs/PORTING.md) — C#, Go, Rust, and Python options; PowerShell-to-Win32 mapping.
+- [AI porting prompt](docs/PORTING-PROMPT.md) — copy-paste brief and phase plan for generating a port in another language.
 - [Testing guide](docs/TESTING.md) — unit, integration, fault-injection, and golden-CSV tests.
 - [Security policy](SECURITY.md) — reporting and operational risks.
 - [Changelog](CHANGELOG.md) — release history.

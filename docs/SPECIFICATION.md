@@ -1,6 +1,6 @@
 # Test-FreeSstpServers v16.1 — Reimplementation Specification
 
-> **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior.
+> **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
 ---
 
@@ -15,6 +15,7 @@
 | Status | Baseline — ready for review and implementation |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
+| Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
 | Reference size | 4,236 lines, 207,968 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
@@ -33,6 +34,7 @@ The repository copy of the script is behaviorally identical to the internal refe
 
 - [README](../README.md) — user-facing overview and quick start.
 - [PORTING.md](PORTING.md) — language options, API mapping, migration phases.
+- [PORTING-PROMPT.md](PORTING-PROMPT.md) — copy-paste AI prompt for generating a port in another language.
 - [TESTING.md](TESTING.md) — test strategy and acceptance criteria.
 - [SECURITY.md](../SECURITY.md) — operational and reporting guidance.
 

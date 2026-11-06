@@ -2,6 +2,8 @@
 
 > **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.1` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
 
+> **AI-assisted porting.** If you want an AI coding assistant to generate the port, use [PORTING-PROMPT.md](PORTING-PROMPT.md). It contains a copy-paste brief, phase prompts, and a definition-of-done checklist.
+
 ---
 
 ## 1. What "porting" means here
