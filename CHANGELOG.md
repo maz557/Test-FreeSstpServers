@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.1.1] - 2026-11-09
+
+### Changed
+
+- New Windows VPN profiles are named `<country> - <host>` instead of using the
+  host alone. Non-443 endpoints keep the `-p<port>` suffix. If the source has
+  no country, the prefix is `Unknown`.
+- Existing profiles with a host-only name are still recognized by the
+  `host:port` duplicate check, so the naming change does not create duplicates.
+
+### Documentation
+
+- Updated the specification, README, testing guide, porting guide, and AI
+  porting prompt for the new naming rule.
+- Removed remaining internal version-comparison wording from the script help.
+
 ## [16.1.0] - 2026-11-05
 
 ### Added
@@ -62,4 +78,5 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.1.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.1
 [16.1.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.0

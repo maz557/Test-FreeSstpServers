@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.1.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -160,7 +160,7 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I24 | Temporary profile left behind | `RAS_CLEANUP_INCOMPLETE` and stop |
 | I25 | Slow server with a partial download | `WORKING_TUNNEL_AND_INTERNET` with `DownloadComplete=False` |
 
-> **Important:** I25 encodes the v16.1 rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
+> **Important:** I25 encodes the v16.1.1 rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
 Use VM snapshots for I23 and I24; they change real RAS state.
 
@@ -237,6 +237,7 @@ The exact column names and order are listed in Section 9 of [SPECIFICATION.md](S
 - [ ] RAS 633, 638, and network timeouts are distinguished correctly.
 - [ ] Only one VPN is tested at a time.
 - [ ] Duplicate profiles are not created.
+- [ ] New profile names combine the country and host, with `Unknown` as the country fallback and `-p<port>` for non-443 endpoints.
 - [ ] Credentials never appear in CSV output or logs.
 - [ ] Unit and integration tests pass.
 - [ ] CSV headers match the reference.
@@ -289,7 +290,7 @@ Use this checklist when reviewing a port. Mark the port column only after a test
 | 37 | Scorer | Yes | | |
 | 38 | CSV sort | Yes | | |
 | 39 | Top N and dedupe | Yes | | |
-| 40 | Profile naming | Yes | | |
+| 40 | Profile naming (country + host) | Yes | | |
 | 41 | Credential storage | Yes | | |
 | 42 | New CSV header (43) | Yes | | |
 | 43 | Existing CSV header (45) | Yes | | |
@@ -321,8 +322,14 @@ Import-Csv .\sstp_test_results_*.csv | Select-Object -First 1 |
 
 Import-Csv .\sstp_existing_profile_check_*.csv | Select-Object -First 1 |
     ForEach-Object { $_.PSObject.Properties.Name.Count }
+
+# 6. Optional: install one confirmed server and check the new profile name.
+.\Test-FreeSstpServers_v16_1.ps1 -MaxServers 1 -AddBestVpnCount 1
+Get-VpnConnection | Select-Object Name, ServerAddress
 ```
 
 For step 5, compare the headers with the specification, not only the count. A correct count with wrong names is still a failure.
+
+For step 6, the new profile name must follow `<country> - <host>` and keep the `-p<port>` suffix for non-443 endpoints.
 
 > **Never** run `-VerifyExisting` with `YES` on a machine whose profiles you are not prepared to lose. Test removal only on a VM or with profiles you created for testing.

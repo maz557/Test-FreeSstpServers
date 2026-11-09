@@ -1,8 +1,10 @@
-# Test-FreeSstpServers v16.1
+# Test-FreeSstpServers v16.1.1
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
+
+Version 16.1.1 changes only the new-profile naming rule; all other v16.1 behavior is unchanged.
 
 ---
 
@@ -34,7 +36,7 @@ A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers,
 - Creates a temporary per-user SSTP profile for each candidate and verifies that Windows stored the expected host and port before dialing.
 - Dials with `rasdial`, verifies that the public IP actually changed, measures ICMP/TCP latency through the tunnel, and measures download speed through the tunnel.
 - Ranks results with normalized speed and latency scores (`Speed`, `Balanced`, or `Latency`).
-- Adds the top N confirmed servers to Windows as SSTP profiles and stores the username/password in the RAS phonebook.
+- Adds the top N confirmed servers to Windows as SSTP profiles named `<country> - <server host>` (non-443 endpoints keep a `-p<port>` suffix) and stores the username/password in the RAS phonebook.
 - Inventories existing per-user and AllUser VPN profiles, including duplicate-name and split-tunneling detection.
 - Tests existing SSTP profiles with the same route, latency, and speed measurements, then produces an `ACCEPT` / `REJECT` / `INCONCLUSIVE` verdict.
 - Removes rejected existing profiles only after a summary table and an explicit uppercase `YES`; `-ReportOnly` never removes anything.
@@ -165,6 +167,8 @@ All files are written next to the script unless `-OutputCsv` is supplied. Timest
 | `sstp_existing_profiles_<ts>.csv` | 7 | `-ListExisting` |
 
 The exact column names and order are part of the compatibility contract. See [docs/SPECIFICATION.md](docs/SPECIFICATION.md#9-ranking-profile-creation-and-csv-schemas).
+
+New Windows profiles are named `<country> - <server host>`; non-443 endpoints keep the `-p<port>` suffix. If the source provides no country, the prefix is `Unknown`.
 
 > The CSV files can contain public IP addresses observed during testing. Review them before sharing.
 

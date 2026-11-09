@@ -1,5 +1,5 @@
-# v16.1: the proven v16 server-testing engine + existing Windows SSTP VPN
-#        profile verification/maintenance (backported and hardened from v17.1).
+# v16.1.1: the proven v16 server-testing engine + existing Windows SSTP VPN
+#        profile verification/maintenance with hardened removal rules.
 #      - New -VerifyExisting switch: test every existing Windows SSTP VPN
 #        profile (per-user and AllUser phonebooks) with TCP, a real SSTP dial,
 #        public-IP route verification, tunnel latency, and a download test.
@@ -12,10 +12,10 @@
 #      - New -ExistingRemovalMode Balanced|Conservative: Balanced also marks
 #        confirmed TCP/dial failures for removal; Conservative only marks
 #        profiles that connect but do not route through the VPN.
-#      - IMPORTANT: this build deliberately keeps the v16 speed-test engine
-#        (Cloudflare URL, partial-download samples accepted). v17.1 required a
-#        full 10 MB download within the timeout, which rejects slow but working
-#        free SSTP servers.
+#      - IMPORTANT: this build keeps the v16 speed-test engine (Cloudflare URL,
+#        partial-download samples accepted). A sample with real bytes over
+#        HTTP 2xx counts even when the transfer is cut short; slow but working
+#        free SSTP servers are not rejected for an incomplete transfer.
 #      - Profiles are removed only after a summary table and an explicit YES.
 #        Local RAS errors, credential rejections, split tunneling, duplicate
 #        names, and uncertain states are always kept.
@@ -72,8 +72,8 @@
 
 .DESCRIPTION
     Test-FreeSstpServers_v16_1.ps1 keeps the proven v16 server-testing engine
-    and adds the existing-profile verification feature from v17.1, with safer
-    removal rules and the v16 speed-test behaviour.
+    and adds existing-profile verification with safer removal rules and the
+    v16 speed-test behaviour.
 
     Existing-profile maintenance:
       -VerifyExisting   Test every existing Windows SSTP profile and, after a
@@ -104,7 +104,8 @@
          download speed + 30% normalized measured latency).
       5. Save a full results CSV sorted by DownloadMbps descending.
       6. Add the top -AddBestVpnCount confirmed servers to Windows as SSTP VPN
-         profiles, skip entries whose name or host:port already exists, and store
+         profiles named "<country> - <host>" (non-443 ports keep a -p<port>
+         suffix), skip entries whose name or host:port already exists, and store
          -Username/-Password (default vpn/vpn) in the per-user RAS phone book.
 
     Requirements:
@@ -170,7 +171,7 @@
 
 .PARAMETER SpeedDownloadBytes
     Number of bytes requested per download sample.
-    Range 1,000,000-100,000,000. Default 10,000,000 (10 MB).
+    Range 1,000,000-100,000,000. Default 10,000,000 bytes.
 
 .PARAMETER SpeedTestUrl
     Download URL template. When it contains {0}, that token is replaced with
@@ -241,8 +242,10 @@
 .PARAMETER AddBestVpnCount
     Number of top confirmed servers to add to Windows VPN at the end.
     Range 0-20. Default 3; 0 disables profile creation. Only servers whose tunnel
-    and internet download were verified are added. Existing profiles with the same
-    name or the same host:port are skipped. New profiles keep -Username/-Password.
+    and internet download were verified are added. New profiles are named
+    "<country> - <host>" (plus -p<port> for non-443 endpoints). Existing profiles
+    with the same name or the same host:port are skipped. New profiles keep
+    -Username/-Password.
 
 .PARAMETER UseClipboard
     Read the server list from text copied from the browser instead of downloading
@@ -394,7 +397,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.1
+    Version  : v16.1.1
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -2667,7 +2670,7 @@ function Test-ExistingSstpProfile {
 
         # Connected: verify the route, measure latency, and run the v16 download
         # test. A partial download sample still counts as a real measurement;
-        # requiring a full 10 MB transfer would reject slow working servers.
+        # requiring the full requested transfer would reject slow working servers.
         $record.VPNConnected = $true
         Start-Sleep -Seconds 2
 
@@ -4127,14 +4130,26 @@ if ($AddBestVpnCount -gt 0) {
             $portUsed = $target.Port
             $hostForName = $target.Host
 
+            # New profile names combine the country with the server host so the
+            # installed entry is recognizable in Windows Settings. A missing
+            # country name uses a stable fallback instead of an empty prefix.
+            $countryForName = ([string]$srv.Country).Trim()
+            if ([string]::IsNullOrWhiteSpace($countryForName)) { $countryForName = 'Unknown' }
+            $countryForName = $countryForName -replace '[\x00-\x1F\x7F]', ' '
+            $countryForName = ($countryForName -replace '\s+', ' ').Trim()
+            if ([string]::IsNullOrWhiteSpace($countryForName)) { $countryForName = 'Unknown' }
+
             $baseProfileName = $hostForName.TrimEnd('.')
             if ([string]::IsNullOrWhiteSpace($baseProfileName)) {
                 $baseProfileName = $serverAddress -replace '^\[|\](?::\d+)?$|:\d+$', ''
             }
+            if ([string]::IsNullOrWhiteSpace($baseProfileName)) { continue }
+            $baseProfileName = "${countryForName} - ${baseProfileName}"
             $newProfileName = if ($portUsed -eq 443) { $baseProfileName } else { "${baseProfileName}-p${portUsed}" }
             if ([string]::IsNullOrWhiteSpace($newProfileName)) { continue }
             # Sanitize characters that are invalid or inconvenient in Windows profile names
             $newProfileName = $newProfileName -replace '[\\/:*?"<>|\[\]]', '_'
+            $newProfileName = $newProfileName.Trim()
 
             # Skip duplicates: same profile name or another profile pointing to
             # the same host/port pair. Never overwrite an existing profile.
@@ -4217,7 +4232,7 @@ if ($AddBestVpnCount -gt 0) {
         }
 
         if ($addedNames.Count -gt 0) {
-            Write-Host ("`nSaved {0} new VPN profile(s) to Windows (name derived from host, port kept in server address):" -f $addedNames.Count) -ForegroundColor Green
+            Write-Host ("`nSaved {0} new VPN profile(s) to Windows (names combine country and host; port kept in server address):" -f $addedNames.Count) -ForegroundColor Green
             $addedNames | ForEach-Object { Write-Host ("  - {0}" -f $_) -ForegroundColor Green }
             if ($skippedExisting.Count -gt 0) {
                 Write-Host "`nSkipped duplicate profile(s) that already existed:" -ForegroundColor Yellow

@@ -1,6 +1,6 @@
 # AI Porting Prompt
 
-> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.1` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.1, not merely compile.
+> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.1.1` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.1.1, not merely compile.
 
 ---
 
@@ -21,7 +21,7 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 - The tool is **Windows-only** because it uses `VpnClient`, `rasdial.exe`, the RAS phonebook, and Windows public-IP behavior. A non-Windows port can reuse the parsers, scorer, CSV writer, and CLI, but cannot provide the VPN workflows without a Windows host or a Windows VM.
 - `docs/SPECIFICATION.md` is the **normative contract**. If the reference script and the specification ever disagree, stop and report the conflict; do not guess.
 - The reference script is **behavior to match**, not code to translate line by line. A port may use different modules, classes, or idioms.
-- The published v16.1 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
+- The published v16.1.1 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
 - Existing-profile deletion is a destructive operation. It requires an exact uppercase `YES`, and `-ReportOnly` must never delete.
 
 ---
@@ -29,7 +29,7 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 ## 3. Copy-paste prompt
 
 ```text
-You are implementing a behavior-compatible port of Test-FreeSstpServers v16.1.
+You are implementing a behavior-compatible port of Test-FreeSstpServers v16.1.1.
 
 Target language: <TARGET_LANGUAGE>
 Target runtime and OS: <TARGET_RUNTIME_AND_OS>
@@ -62,6 +62,7 @@ Non-negotiable contract:
 - Existing profiles are removed only after a summary and an exact uppercase YES. -ReportOnly never deletes. INCONCLUSIVE always maps to KEEP.
 - Only one VPN connection may be active at a time. Clean up temporary profiles in a finally block. Pause later dials after an uncertain RAS state.
 - Install only WORKING_TUNNEL_AND_INTERNET servers. Deduplicate by host:port. Never overwrite an existing profile.
+- Name new profiles "<country> - <host>", use "Unknown" when the country is empty, and append "-p<port>" for non-443 endpoints.
 - Never write credentials to CSV files or logs. Sanitize profile names. Use argument arrays, not shell string concatenation.
 - -Help must work before the Administrator check. Every other mode requires the documented environment checks.
 
@@ -133,6 +134,7 @@ Use this list during review. Every item must be confirmed by a test or a code re
 - [ ] Route check, tunnel latency, and partial-download acceptance.
 - [ ] Cleanup in `finally`; pause later dials after an uncertain RAS state.
 - [ ] Only `WORKING_TUNNEL_AND_INTERNET` servers are eligible for installation.
+- [ ] New profile names combine the country and host (`<country> - <host>`), use `Unknown` when the country is empty, and append `-p<port>` for non-443 endpoints.
 
 ### 5.4. Existing-profile workflow
 
@@ -179,13 +181,14 @@ A port is ready for review only when all of the following are true:
 
 | Mistake | Why it is wrong |
 |---|---|
-| Requiring a complete download | Violates the v16.1 rule: real partial bytes are accepted. |
+| Requiring a complete download | Violates the v16.1.1 rule: real partial bytes are accepted. |
 | Translating status strings or CSV headers | Breaks compatibility and golden tests. |
 | Treating `INCONCLUSIVE` as removable | Violates the safety contract. |
 | Accepting `yes`, `Yes`, or `Y` for deletion | Only exact uppercase `YES` is allowed. |
 | Deleting from the other phonebook scope | The tested scope is the only valid scope. |
 | Running VPN dials in parallel | Corrupts public-IP and RAS results. |
 | Writing credentials to CSV or logs | A privacy and security defect. |
+| Naming profiles after the host only | The naming rule combines the country and the host. |
 | Replacing argument arrays with shell strings | Increases injection risk. |
 | Skipping `finally` cleanup | Leaves temporary profiles and uncertain RAS state. |
 | "Improving" behavior without a version bump | Breaks behavioral parity. |
@@ -217,9 +220,9 @@ After the assistant responds, send the full prompt in [Section 3](#3-copy-paste-
 - [ ] CSV header comparison is automated.
 - [ ] Safety tests are automated or documented as manual VM tests.
 - [ ] Known differences are listed in the port's README.
-- [ ] The port's documentation states that it is based on v16.1 behavior.
+- [ ] The port's documentation states that it is based on v16.1.1 behavior.
 - [ ] The port does not claim to be an official release unless the maintainer says so.
 
 ---
 
-*This prompt is a tool for implementers. It does not grant permission to change the v16.1 behavior contract.*
+*This prompt is a tool for implementers. It does not grant permission to change the v16.1.1 behavior contract.*

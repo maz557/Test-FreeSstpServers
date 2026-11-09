@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.1 — Reimplementation Specification
+# Test-FreeSstpServers v16.1.1 — Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -9,19 +9,19 @@
 | Item | Value |
 |---|---|
 | Document ID | `PRJ-SSTP-V161-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.1` |
-| Document version | `1.0` |
-| Date | 2026-11-05 |
-| Status | Baseline — ready for review and implementation |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.1.1` |
+| Document version | `1.1` |
+| Date | 2026-11-09 |
+| Status | Baseline — includes v16.1.1 profile naming |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,236 lines, 207,968 bytes |
+| Reference size | 4,251 lines, 209,008 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is behaviorally identical to the internal reference. One help-text example path was sanitized before publication; no executable logic changed.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication; the only behavior change in v16.1.1 is the new profile naming rule in Section 9.8.
 
 ### Normative language
 
@@ -85,7 +85,7 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 
 ### 1.3. Out of scope
 
-- Requiring the full requested download size before accepting a sample. **v16.1 deliberately accepts partial downloads with real bytes.**
+- Requiring the full requested download size before accepting a sample. **v16.1.1 deliberately accepts partial downloads with real bytes.**
 - Non-SSTP VPN protocols.
 - A graphical user interface.
 - A background service or multi-user server.
@@ -161,7 +161,7 @@ The tool is a **local orchestrator**, not a network service. Every measurement r
 | `DownloadProbe` | Run curl and parse write-out | URL/bytes | `DownloadResult` |
 | `Scorer` | Compute SpeedScore/LatencyScore/SelectionScore | records | records |
 | `ResultWriter` | Sort and write CSV | records | CSV |
-| `ProfileAdder` | Add top N with dedupe and credential storage | confirmed | profile names |
+| `ProfileAdder` | Add top N with country + host naming, dedupe, and credential storage | confirmed | profile names |
 | `ExistingInventory` | Read both phonebooks | — | `ExistingProfile[]` |
 | `ExistingTester` | Test one profile and produce a verdict | profile | `VerificationRecord` |
 | `RemovalGuard` | Remove only the tested scope and confirmed state | record | action |
@@ -373,6 +373,8 @@ Every source row is normalized to this record:
 | `UptimeText` | string | Uptime text from the source; may be empty. |
 | `UptimeMinutes` | number? | Uptime normalized to minutes; `null` means unknown. |
 | `InputOrder` | int | In-memory only; stable tie-breaker after sorting. |
+
+`Country` is also the prefix of new profile names (Section 9.8); an empty value becomes `Unknown`.
 
 **Unique key:** `Server` after `ToLowerInvariant()`. `Example.com:443` and `example.com:443` are the same endpoint.
 
@@ -2191,11 +2193,24 @@ for srv in confirmed (already sorted by SelectionScore):
 
 ### 9.8. New profile naming
 
+New profiles are named from the country and the server host:
+
 ```text
+countryForName = trim(server.Country)
+if countryForName == "":
+    countryForName = "Unknown"
+countryForName = remove control characters and collapse whitespace(countryForName)
+if countryForName == "":
+    countryForName = "Unknown"
+
 baseProfileName = target.Host.TrimEnd('.')
 if baseProfileName == "":
     baseProfileName = regex replace target.ServerAddress:
         '^\[|\](?::\d+)?$|:\d+$' -> ''
+
+if baseProfileName == "": skip
+
+baseProfileName = countryForName + " - " + baseProfileName
 
 newProfileName = if target.Port == 443
                  then baseProfileName
@@ -2204,16 +2219,17 @@ newProfileName = if target.Port == 443
 if newProfileName == "": skip
 
 newProfileName = regex replace '[\\/:*?"<>|\[\]]' -> '_'
+newProfileName = trim(newProfileName)
 ```
 
 Examples:
 
-| Host | Port | Name |
-|---|---|---|
-| `vpn.example.com` | 443 | `vpn.example.com` |
-| `vpn.example.com` | 1556 | `vpn.example.com-p1556` |
-| `2001:db8::1` | 443 | `2001_db8__1` (after sanitize) |
-| `2001:db8::1` | 1556 | `2001_db8__1-p1556` |
+| Country | Host | Port | Name |
+|---|---|---|---|
+| `Germany` | `vpn.example.com` | 443 | `Germany - vpn.example.com` |
+| `Germany` | `vpn.example.com` | 1556 | `Germany - vpn.example.com-p1556` |
+| (empty) | `2001:db8::1` | 443 | `Unknown - 2001_db8__1` (after sanitize) |
+| `Korea, Republic of` | `vpn.example.com` | 443 | `Korea, Republic of - vpn.example.com` |
 
 ### 9.9. Duplicate detection during installation
 
@@ -2223,6 +2239,7 @@ For each `topServer`:
 2. For each existing profile:
    - If `existing.Name -ieq newProfileName` → duplicate.
    - Or if `Parse-SstpServerAddress(existing.ServerAddress)` succeeds and host (trim trailing dot, case-insensitive) and port equal the target → duplicate.
+   - The host/port check also catches profiles created by older versions with a host-only name, so the new naming rule does not create duplicates.
 3. If duplicate:
    - Message: `Skipping duplicate profile '<existing>' (a Windows VPN entry already uses <address>).`
    - Record the name in `skippedExisting`.
