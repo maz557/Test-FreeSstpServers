@@ -22,12 +22,13 @@ The following are part of the public behavior contract:
 - Status strings, verdicts, planned actions, and action-taken values.
 - CSV file names, column names, and column order.
 - New profile naming (`<country> - <host>`, plus `-p<port>` for non-443 endpoints).
+- The final-fallback port confirmation when a port-443-only list conflicts with `-PortMode Non443`.
 - The `YES` confirmation rule for deletion.
 - `INCONCLUSIVE` always mapping to `KEEP`.
 - One VPN connection at a time.
 
 A pull request that changes any of these needs an explicit compatibility
-discussion in an issue first. Improvements that do not preserve v16.1.1 behavior
+discussion in an issue first. Improvements that do not preserve v16.1.2 behavior
 belong in a future major version.
 
 ## Development setup

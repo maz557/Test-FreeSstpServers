@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.1.2] - 2026-11-12
+
+### Fixed
+
+- When the final fallback source is the only source and every entry uses
+  port 443, `-PortMode Non443` no longer fails with the generic
+  `No servers matched` error. The script explains the conflict and asks for
+  explicit confirmation before continuing with the port-443 entries.
+  Declining exits without testing anything.
+
+### Documentation
+
+- Updated the specification, README, and testing guide for the final-fallback
+  port confirmation.
+
 ## [16.1.1] - 2026-11-09
 
 ### Changed
@@ -78,5 +93,6 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.1.2]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.2
 [16.1.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.1
 [16.1.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.0

@@ -1,6 +1,6 @@
 # Porting Guide
 
-> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.1.1` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
+> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.1.2` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
 
 > **AI-assisted porting.** If you want an AI coding assistant to generate the port, use [PORTING-PROMPT.md](PORTING-PROMPT.md). It contains a copy-paste brief, phase prompts, and a definition-of-done checklist.
 
@@ -14,9 +14,10 @@ A port is successful when the observable behavior matches the reference script:
 - the same status, verdict, planned-action, and action-taken strings;
 - the same CSV file names, columns, column order, and serialization;
 - the same safety rules, including exact-`YES` deletion and `-ReportOnly` behavior;
+- the same final-fallback port confirmation when a port-443-only list conflicts with `-PortMode Non443`;
 - the same ranking and top-N selection.
 
-Internal structure, concurrency for non-VPN work, and UI styling are free to change. The reference implementation is a single 4,251-line PowerShell script; a port SHOULD split it into modules.
+Internal structure, concurrency for non-VPN work, and UI styling are free to change. The reference implementation is a single 4,287-line PowerShell script; a port SHOULD split it into modules.
 
 ### 1.1. Reference environment
 
@@ -177,7 +178,7 @@ A realistic estimate for one full-time developer with a Windows VM is 6–9 week
 | Property-order differences | Define column order explicitly in the writer |
 | Console differences | Preserve key text and columns; color is optional |
 | Clipboard unavailable | Fall back to an HTML file |
-| Partial downloads rejected by mistake | Keep the v16.1.1 rule: real bytes are enough; `DownloadComplete=False` does not prevent acceptance |
+| Partial downloads rejected by mistake | Keep the v16.1.2 rule: real bytes are enough; `DownloadComplete=False` does not prevent acceptance |
 
 ---
 

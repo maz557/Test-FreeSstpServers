@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.1.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.1.2` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -159,8 +159,9 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I23 | Simulated RAS 633 | `LOCAL_RAS_ERROR_633_AFTER_RETRY` and stop |
 | I24 | Temporary profile left behind | `RAS_CLEANUP_INCOMPLETE` and stop |
 | I25 | Slow server with a partial download | `WORKING_TUNNEL_AND_INTERNET` with `DownloadComplete=False` |
+| I26 | `-FinalFallbackOnly -PortMode Non443 -ListOnly` | 443-only fallback → prompt; `Q` stops, `Y` continues with effective `All` |
 
-> **Important:** I25 encodes the v16.1.1 rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
+> **Important:** I25 encodes the v16.1.1 partial-download rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
 Use VM snapshots for I23 and I24; they change real RAS state.
 
@@ -238,6 +239,7 @@ The exact column names and order are listed in Section 9 of [SPECIFICATION.md](S
 - [ ] Only one VPN is tested at a time.
 - [ ] Duplicate profiles are not created.
 - [ ] New profile names combine the country and host, with `Unknown` as the country fallback and `-p<port>` for non-443 endpoints.
+- [ ] A port-443-only final fallback list asks before overriding `-PortMode Non443`.
 - [ ] Credentials never appear in CSV output or logs.
 - [ ] Unit and integration tests pass.
 - [ ] CSV headers match the reference.
@@ -296,6 +298,7 @@ Use this checklist when reviewing a port. Mark the port column only after a test
 | 43 | Existing CSV header (45) | Yes | | |
 | 44 | Snapshot header (8) | Yes | | |
 | 45 | Key messages | Yes | | |
+| 46 | Final-fallback port confirmation | Yes | | |
 
 ---
 
@@ -326,10 +329,15 @@ Import-Csv .\sstp_existing_profile_check_*.csv | Select-Object -First 1 |
 # 6. Optional: install one confirmed server and check the new profile name.
 .\Test-FreeSstpServers_v16_1.ps1 -MaxServers 1 -AddBestVpnCount 1
 Get-VpnConnection | Select-Object Name, ServerAddress
+
+# 7. Final-fallback port confirmation: answer Q to stop, or Y to continue with 443.
+.\Test-FreeSstpServers_v16_1.ps1 -FinalFallbackOnly -PortMode Non443 -ListOnly
 ```
 
 For step 5, compare the headers with the specification, not only the count. A correct count with wrong names is still a failure.
 
 For step 6, the new profile name must follow `<country> - <host>` and keep the `-p<port>` suffix for non-443 endpoints.
+
+For step 7, the script must explain that the fallback list contains only port-443 endpoints. `Q` must exit without testing; `Y` must continue with effective port mode `All` and save the snapshot.
 
 > **Never** run `-VerifyExisting` with `YES` on a machine whose profiles you are not prepared to lose. Test removal only on a VM or with profiles you created for testing.

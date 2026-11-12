@@ -1,10 +1,10 @@
-# Test-FreeSstpServers v16.1.1
+# Test-FreeSstpServers v16.1.2
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-Version 16.1.1 changes only the new-profile naming rule; all other v16.1 behavior is unchanged.
+Version 16.1.2 adds an explicit confirmation before a port-443-only final fallback list overrides `-PortMode Non443`; all other v16.1 behavior is unchanged.
 
 ---
 
@@ -33,6 +33,7 @@ Version 16.1.1 changes only the new-profile naming rule; all other v16.1 behavio
 - Parses FQDN, IPv4, and bracketed IPv6 endpoints with optional non-443 ports.
 - Merges duplicate endpoints, keeping the entry with the lower published PING.
 - Filters by port (`All`, `443`, `Non443`) and shortlists by the source PING, then by uptime.
+- If the last-resort fallback list is the only source and contains only port-443 endpoints, asks for explicit confirmation before continuing when `-PortMode Non443` would discard every entry.
 - Creates a temporary per-user SSTP profile for each candidate and verifies that Windows stored the expected host and port before dialing.
 - Dials with `rasdial`, verifies that the public IP actually changed, measures ICMP/TCP latency through the tunnel, and measures download speed through the tunnel.
 - Ranks results with normalized speed and latency scores (`Speed`, `Balanced`, or `Latency`).
@@ -196,6 +197,8 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 # Existing-profile maintenance with the conservative removal policy.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -ExistingRemovalMode Conservative
 ```
+
+> The default final fallback list publishes only port-443 endpoints. If `-PortMode Non443` would discard all of them, the script asks for confirmation before continuing with port 443 for that last-resort run.
 
 ## Important parameters
 

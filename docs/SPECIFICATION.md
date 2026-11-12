@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.1.1 — Reimplementation Specification
+# Test-FreeSstpServers v16.1.2 - Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -9,19 +9,19 @@
 | Item | Value |
 |---|---|
 | Document ID | `PRJ-SSTP-V161-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.1.1` |
-| Document version | `1.1` |
-| Date | 2026-11-09 |
-| Status | Baseline — includes v16.1.1 profile naming |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.1.2` |
+| Document version | `1.2` |
+| Date | 2026-11-12 |
+| Status | Baseline - includes v16.1.1 profile naming and the v16.1.2 fallback port confirmation |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,251 lines, 209,008 bytes |
+| Reference size | 4,287 lines, 211,348 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication; the only behavior change in v16.1.1 is the new profile naming rule in Section 9.8.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1.
 
 ### Normative language
 
@@ -85,7 +85,7 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 
 ### 1.3. Out of scope
 
-- Requiring the full requested download size before accepting a sample. **v16.1.1 deliberately accepts partial downloads with real bytes.**
+- Requiring the full requested download size before accepting a sample. **v16.1.1 deliberately accepts partial downloads with real bytes; v16.1.2 preserves that rule.**
 - Non-SSTP VPN protocols.
 - A graphical user interface.
 - A background service or multi-user server.
@@ -612,6 +612,8 @@ Rules:
 - Set `PingMs=null`, `UptimeText=''`, `UptimeMinutes=null`.
 - Remove duplicates.
 
+> The current default Delta-Kronecker list contains only port-443 entries. The parser still accepts explicit non-443 ports; Section 6.1 defines the confirmation used when `-PortMode Non443` would discard the entire fallback list.
+
 ### 4.6. CSV snapshot loader (`Get-SstpServersFromCsv`)
 
 - The file must exist and must not be empty.
@@ -647,6 +649,8 @@ Rules:
 **Important:** if `-UseClipboard` is combined with `-ServerListCsv`, the CSV wins because the clipboard branch requires an empty `ServerListCsv`.
 
 **Note:** `-FinalFallbackOnly` cannot be combined with `-ServerListCsv`, `-HtmlFile`, `-ExtraSourceOnly`, or `-NoExtraSource`.
+
+The default final fallback list currently publishes only port-443 endpoints. If it is the only source and `-PortMode Non443` would discard every entry, Section 6.1 requires a confirmation before the effective mode is changed to `All`.
 
 ### 4.8. Source fetching and error handling
 
@@ -788,7 +792,7 @@ After merge and port filtering:
 | `-LatencySamples` | int | 1–5 | `1` | Probes per measurement; median is used. |
 | `-RankMode` | enum | `Speed`, `Balanced`, `Latency` | `Balanced` | Final ranking formula. |
 | `-MaxServers` | int | 0–10,000 | `0` | 0 = all; otherwise the first N servers after sorting. |
-| `-PortMode` | enum | `All`, `443`, `Non443` | `All` | Port filter; alias: `-PortFilter`. |
+| `-PortMode` | enum | `All`, `443`, `Non443` | `All` | Port filter; alias: `-PortFilter`. See Section 6.1 for the final-fallback confirmation. |
 | `-TcpTimeoutMs` | int | 250–10,000 | `1800` | TCP probe timeout. |
 | `-RasRecoveryDelaySec` | int | 1–30 | `4` | RAS recovery/cleanup delay. |
 | `-Ras633Retries` | int | 0–3 | `1` | Retries after local RAS 633. |
@@ -955,20 +959,32 @@ This is the v16 engine. It runs after the existing-profile phase when `-PruneFir
 After acquiring and merging the list:
 
 1. Record `serverCountBeforePortFilter = servers.Count`.
-2. Apply `PortMode`:
+2. If the final fallback source is the only source, `PortMode` is `Non443`, and every record has `Port == 443`, ask:
+   `Type Y to continue with these port-443 servers, or Q to quit`.
+   - `Y` or `YES`: set the effective `PortMode` to `All` for this run and continue.
+   - Anything else: throw `Stopped by user: the final fallback source contains only port-443 servers, and -PortMode Non443 excludes them.`
+3. Apply `PortMode`:
    - `All`: no change.
    - `443`: keep only `Port == 443`.
    - `Non443`: keep only `Port != 443`.
-3. If the result is empty, throw: `No servers matched -PortMode '<mode>'. Use -PortMode All or refresh the server list.`
-4. Assign `InputOrder` (1-based).
-5. Sort by PING/uptime/InputOrder as described in Section 4.10.
-6. Apply `PriorityServer`.
-7. Save the snapshot with columns:
+4. If the result is empty, throw: `No servers matched -PortMode '<mode>'. Use -PortMode All or refresh the server list.`
+5. Assign `InputOrder` (1-based).
+6. Sort by PING/uptime/InputOrder as described in Section 4.10.
+7. Apply `PriorityServer`.
+8. Save the snapshot with columns:
    `Country, Source, Server, Host, Port, PingMs, UptimeText, UptimeMinutes`
-8. If `-ListOnly`, print a success message and `return`.
-9. Read `listFetchIp4 = Get-PublicIp(IPv4)` **before** truncation.
-10. Apply `MaxServers` when > 0.
-11. Print threshold messages and enter baseline confirmation.
+9. If `-ListOnly`, print a success message and `return`.
+10. Read `listFetchIp4 = Get-PublicIp(IPv4)` **before** truncation.
+11. Apply `MaxServers` when > 0.
+12. Print threshold messages and enter baseline confirmation.
+
+When step 2 shows the confirmation, the exact console text is:
+
+```text
+The final fallback source (<url>) returned <N> server(s), all on port 443.
+The current -PortMode Non443 filter would discard every one of them.
+Continuing with the final fallback list; effective port mode for this run: All.
+```
 
 > The snapshot is always saved in a normal run, even without `-ListOnly`. It is the evidence of the input list and a valid input for `-ServerListCsv`.
 

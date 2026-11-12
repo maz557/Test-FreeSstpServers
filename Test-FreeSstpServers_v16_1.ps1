@@ -1,3 +1,5 @@
+# v16.1.2: v16.1.1 + an explicit confirmation before a port-443-only final
+#        fallback list overrides -PortMode Non443.
 # v16.1.1: the proven v16 server-testing engine + existing Windows SSTP VPN
 #        profile verification/maintenance with hardened removal rules.
 #      - New -VerifyExisting switch: test every existing Windows SSTP VPN
@@ -33,7 +35,10 @@
 #      - Last-resort fallback: when the clipboard, the primary source, and the
 #        supplementary source(s) all yield nothing, a plain-text SSTP host list
 #        is read from -FinalFallbackUrl (Delta-Kronecker Vpn-Gate by default).
-#        Use -FinalFallbackOnly to test that source alone.
+#        Use -FinalFallbackOnly to test that source alone. The default list
+#        currently publishes only port-443 endpoints; when -PortMode Non443
+#        would discard all of them, the script asks before overriding the
+#        filter to All for that last-resort run.
 # v15 FINAL: faster, measurement-based server selection.
 #      - Shortlist: sort all candidates by the PING column already published by
 #        the source list (ascending, unknown last), then apply -MaxServers.
@@ -93,7 +98,10 @@
       1. Obtain the server list from the primary source (web page, clipboard,
          saved HTML, or a local CSV snapshot from a previous run) and, by default,
          also from the supplementary VPN Gate source (-ExtraSourceUrl). Merge both
-         lists and remove duplicate host:port endpoints.
+         lists and remove duplicate host:port endpoints. If every earlier source
+         is empty, try the final fallback plain host list (-FinalFallbackUrl); a
+         port-443-only fallback with -PortMode Non443 asks before the filter is
+         overridden to All.
       2. Filter by -PortMode, sort by source PING ascending (unknown last; longer
          published uptime wins a tie), then optionally move -PriorityServer first
          and keep only the first -MaxServers entries.
@@ -149,6 +157,9 @@
     URL is unreachable, the readable-text mirror is tried. Disabled by
     -NoExtraSource and ignored in -ExtraSourceOnly mode.
     Use -FinalFallbackOnly to test this source alone.
+    The default list currently publishes only port-443 endpoints. If
+    -PortMode Non443 would discard all of them, the script asks before
+    overriding the filter to All for that last-resort run.
 
 .PARAMETER FinalFallbackOnly
     Use only -FinalFallbackUrl: skip the clipboard, the primary -Url, every
@@ -157,7 +168,8 @@
       .\Test-FreeSstpServers_v16_1.ps1 -FinalFallbackOnly -PortMode All -MaxServers 30
     Cannot be combined with -ExtraSourceOnly, -NoExtraSource, -ServerListCsv,
     or -HtmlFile. The port filter still applies, so use -PortMode All to test
-    every entry regardless of port.
+    every entry regardless of port. If -PortMode Non443 would discard the
+    entire port-443-only list, the script asks before overriding it to All.
 
 .PARAMETER ConnectTimeoutSec
     Maximum seconds to wait for one SSTP VPN dial. Range 10-300. Default 150.
@@ -205,6 +217,8 @@
       All    - every server (default)
       443    - only servers on port 443
       Non443 - only servers on ports other than 443
+    When the final fallback source is the only source and every entry uses
+    port 443, the script asks before overriding Non443 to All for that run.
 
 .PARAMETER TcpTimeoutMs
     TCP pre-check timeout in milliseconds. Range 250-10000. Default 1800.
@@ -397,7 +411,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.1.1
+    Version  : v16.1.2
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -3290,6 +3304,7 @@ if ($VerifyExisting -or $PruneFirst) {
 
 $servers = @()
 $usedVpnRetry = $false
+$finalFallbackUsed = $false
 $lastFetchError = ''
 
 # Build the supplementary URL list once. The primary URL is never repeated,
@@ -3328,6 +3343,7 @@ if ($FinalFallbackOnly) {
         if ($shortError.Length -gt 260) { $shortError = $shortError.Substring(0, 260) + '...' }
         throw ("No server list could be obtained from -FinalFallbackUrl. Reason: {0}" -f $shortError)
     }
+    $finalFallbackUsed = $true
     Write-Host ("Retrieved {0} unique server(s) from the final fallback source only." -f $servers.Count) -ForegroundColor Green
 } elseif ($ExtraSourceOnly) {
     $allLists = [System.Collections.Generic.List[object]]::new()
@@ -3442,6 +3458,7 @@ if ($useFinalFallback) {
     if ($finalResult.Errors.Count -gt 0) { $lastFetchError = ($finalResult.Errors -join ' | ') }
     $servers = @(Merge-SstpServerLists -Lists @($finalResult.Servers))
     if ($servers.Count -gt 0) {
+        $finalFallbackUsed = $true
         $lastFetchError = ''
         Write-Host ("Merged {0} unique server(s) from the final fallback source." -f $servers.Count) -ForegroundColor Green
     }
@@ -3523,6 +3540,7 @@ while ($servers.Count -eq 0) {
             $finalResult = Get-SstpServersFromPlainHostListUrls -Urls @($FinalFallbackUrl)
             if ($finalResult.Errors.Count -gt 0) { $lastFetchError = ($finalResult.Errors -join ' | ') }
             $servers = @(Merge-SstpServerLists -Lists @($finalResult.Servers))
+            if ($servers.Count -gt 0) { $finalFallbackUsed = $true }
         }
         if ($servers.Count -gt 0) {
             $lastFetchError = ''
@@ -3540,6 +3558,24 @@ while ($servers.Count -eq 0) {
 # This ensures -MaxServers 10 with -PortMode Non443 means ten non-443 candidates,
 # not the first ten rows from the unfiltered list. The default remains All.
 $serverCountBeforePortFilter = $servers.Count
+
+# The final fallback list is a plain host list and currently contains only
+# port-443 endpoints. If the user asked for Non443, the filter would discard
+# every last-resort entry. Ask before overriding the filter instead of failing
+# with the generic port-mode error.
+if ($finalFallbackUsed -and $PortMode -eq 'Non443' -and $servers.Count -gt 0 -and
+    @($servers | Where-Object { [int]$_.Port -ne 443 }).Count -eq 0) {
+    Write-Host ''
+    Write-Host ("The final fallback source ({0}) returned {1} server(s), all on port 443." -f $FinalFallbackUrl, $servers.Count) -ForegroundColor Yellow
+    Write-Host 'The current -PortMode Non443 filter would discard every one of them.' -ForegroundColor Yellow
+    $fallbackPortChoice = (Read-Host 'Type Y to continue with these port-443 servers, or Q to quit').Trim().ToUpperInvariant()
+    if ($fallbackPortChoice -notin @('Y', 'YES')) {
+        throw 'Stopped by user: the final fallback source contains only port-443 servers, and -PortMode Non443 excludes them.'
+    }
+    $PortMode = 'All'
+    Write-Host 'Continuing with the final fallback list; effective port mode for this run: All.' -ForegroundColor Cyan
+}
+
 switch ($PortMode) {
     '443' {
         $servers = @($servers | Where-Object { [int]$_.Port -eq 443 })
