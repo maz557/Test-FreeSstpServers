@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.2.0] - 2026-11-19
+
+### Added
+
+- `-KeepBestExisting` for `-VerifyExisting`: after testing, working profiles
+  are ranked by measured download speed. The operator can keep every working
+  profile (`ALL`, default) or only the fastest N (`TOP N`).
+- `Run-ApplyRemovals.cmd` now enables `-KeepBestExisting`, so the apply workflow
+  offers speed-ranked retention before the final removal confirmation.
+- `PlannedAction=REMOVE_BY_CHOICE` records a working profile that was not
+  retained. The health verdict remains `ACCEPT`; the profile is removed only
+  after the final exact uppercase `YES`.
+
+### Safety
+
+- `INCONCLUSIVE`, skipped, non-SSTP, and `ACCEPT` profiles without a usable
+  download-speed sample are always kept.
+- `-KeepBestExisting` cannot be combined with `-ReportOnly` or `-PruneFirst`.
+  `-ReportOnly` continues to never delete.
+- Speed-ranked retention is disabled when verification pauses on an uncertain
+  RAS state; only already-rejected profiles remain eligible for removal.
+- The existing-profile CSV keeps its 45 columns; only the `PlannedAction`
+  value set grows.
+
+### Documentation
+
+- Updated the specification, README, testing guide, porting guide, and AI
+  porting prompt for speed-ranked retention.
+
 ## [16.1.2] - 2026-11-12
 
 ### Fixed
@@ -93,6 +122,7 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.2.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.0
 [16.1.2]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.2
 [16.1.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.1
 [16.1.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.0

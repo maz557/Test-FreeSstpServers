@@ -1,10 +1,10 @@
-# Test-FreeSstpServers v16.1.2
+# Test-FreeSstpServers v16.2.0
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-Version 16.1.2 adds an explicit confirmation before a port-443-only final fallback list overrides `-PortMode Non443`; all other v16.1 behavior is unchanged.
+Version 16.2.0 adds optional speed-ranked retention for existing profiles: after testing, keep every working profile or only the fastest N. Nothing is removed without the final exact uppercase `YES`, and `-ReportOnly` still never deletes. All other v16.1.2 behavior is unchanged unless `-KeepBestExisting` is used.
 
 ---
 
@@ -40,7 +40,8 @@ Version 16.1.2 adds an explicit confirmation before a port-443-only final fallba
 - Adds the top N confirmed servers to Windows as SSTP profiles named `<country> - <server host>` (non-443 endpoints keep a `-p<port>` suffix) and stores the username/password in the RAS phonebook.
 - Inventories existing per-user and AllUser VPN profiles, including duplicate-name and split-tunneling detection.
 - Tests existing SSTP profiles with the same route, latency, and speed measurements, then produces an `ACCEPT` / `REJECT` / `INCONCLUSIVE` verdict.
-- Removes rejected existing profiles only after a summary table and an explicit uppercase `YES`; `-ReportOnly` never removes anything.
+- With `-VerifyExisting -KeepBestExisting`, ranks working profiles by measured download speed and lets you keep all of them or only the fastest N. Profiles without a usable speed sample, `INCONCLUSIVE` profiles, and skipped profiles are always kept.
+- Removes rejected existing profiles, and any working profiles you explicitly choose not to retain, only after a summary table and an explicit uppercase `YES`; `-ReportOnly` never removes anything.
 - Writes machine-readable CSV reports for every phase.
 
 ## Requirements
@@ -89,7 +90,7 @@ The repository also includes double-click launchers that request elevation autom
 | `Run-Normal.cmd` | Clipboard list, `Non443`, 30 servers, add top 3 |
 | `Run-ListExisting.cmd` | Inventory only; no dial, no change |
 | `Run-ReportOnly.cmd` | Existing-profile test with `-ReportOnly` |
-| `Run-ApplyRemovals.cmd` | Existing-profile test with controlled removal after `YES` |
+| `Run-ApplyRemovals.cmd` | Existing-profile test with speed-ranked `ALL` / `TOP N` retention and controlled removal after `YES` |
 
 ## Modes
 
@@ -99,6 +100,7 @@ The repository also includes double-click launchers that request elevation autom
 | Inventory | `-ListExisting` | Lists per-user and AllUser profiles; no dial | `sstp_existing_profiles_<ts>.csv` |
 | Verify dry-run | `-VerifyExisting -ReportOnly` | Tests existing SSTP profiles; never deletes | `sstp_existing_profile_check_<ts>.csv` |
 | Verify apply | `-VerifyExisting` | Tests, shows summary, asks for `YES`, removes rejected | CSV + removals |
+| Verify + best | `-VerifyExisting -KeepBestExisting` | Tests, ranks working profiles by speed, keeps `ALL` or `TOP N`, then asks for `YES` | CSV + removals |
 | Prune + normal | `-PruneFirst` | Existing-profile phase, then the normal new-server run | Two CSVs |
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion, then normal run | Two CSVs |
 | List only | `-ListOnly` | Fetch, filter, sort, save snapshot, exit | `sstp_server_list_<ts>.csv` |
@@ -148,6 +150,7 @@ Every candidate is tested serially. Parallel VPN dials would make public-IP comp
 The tool changes Windows VPN configuration, so the following rules are non-negotiable:
 
 - **Explicit consent for deletion.** Existing profiles are removed only after the summary table and an exact uppercase `YES`. Pressing Enter, `yes`, `Yes`, or `Y` keeps every profile.
+- **Working-profile retention is explicit.** With `-KeepBestExisting`, only `ACCEPT` profiles with a real download-speed sample are ranked. `INCONCLUSIVE`, skipped, non-SSTP, and no-speed profiles are always kept. Removing a working profile requires choosing `TOP N` and then typing the final exact `YES`.
 - **Report-only never deletes.** `-ReportOnly` is the recommended first maintenance run.
 - **Uncertain means keep.** Any `INCONCLUSIVE` verdict maps to `KEEP`. Local RAS errors, credential rejections, split tunneling, duplicate names, and unparseable addresses are never grounds for deletion.
 - **Scope fidelity.** A profile is removed only from the phonebook scope that was tested (`User` or `AllUser`). The tool never falls back to the other scope.
@@ -196,6 +199,9 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 
 # Existing-profile maintenance with the conservative removal policy.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -ExistingRemovalMode Conservative
+
+# Rank working profiles by measured speed, then keep ALL or only TOP N.
+.\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 ```
 
 > The default final fallback list publishes only port-443 endpoints. If `-PortMode Non443` would discard all of them, the script asks for confirmation before continuing with port 443 for that last-resort run.
@@ -217,19 +223,20 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 | `-RankMode` | `Balanced` | `Speed`, `Balanced` (70/30), or `Latency` |
 | `-AddBestVpnCount` | `3` | Number of confirmed servers to install; `0` disables |
 | `-VerifyExisting` | off | Standalone existing-profile verification |
+| `-KeepBestExisting` | off | With `-VerifyExisting`, rank working profiles by speed and keep `ALL` or `TOP N` |
 | `-PruneFirst` | off | Verify existing profiles, then run normally |
 | `-ReportOnly` | off | Never delete during the existing-profile phase |
 | `-ListExisting` | off | Inventory only |
 | `-ExistingRemovalMode` | `Balanced` | `Balanced` or `Conservative` |
 | `-Help` | off | Show help and exit |
 
-All 41 parameters, their ranges, defaults, and validation rules are documented in [docs/SPECIFICATION.md](docs/SPECIFICATION.md#5-command-line-interface).
+All 42 parameters, their ranges, defaults, and validation rules are documented in [docs/SPECIFICATION.md](docs/SPECIFICATION.md#5-command-line-interface).
 
 ## Limitations and privacy
 
 - **Windows only.** The tool depends on the Windows `VpnClient` module, `rasdial.exe`, and the RAS phonebook.
 - **Free servers are untrusted.** A working tunnel does not make the operator trustworthy. Do not send sensitive traffic through a free VPN.
-- **Measurements are point-in-time.** Speed and latency are observed during this run, not guaranteed long-term values.
+- **Measurements are point-in-time.** Speed and latency are observed during this run, not guaranteed long-term values. A single sample can be noisy; use `-SpeedSamples 2` or `3` when speed-ranked retention will decide which profiles to keep.
 - **One VPN at a time.** Do not run two instances of the tool concurrently.
 - **Default credentials.** `-Username` and `-Password` default to `vpn` / `vpn`, the public test credentials used by VPN Gate. Change them if your provider requires different credentials. Credentials are stored in the per-user RAS phonebook for profiles the tool creates; they are never written to CSV files.
 - **Network endpoints contacted.** The tool may contact the configured server-list sources, `r.jina.ai` (readable-text mirror), `api.ipify.org`, `checkip.amazonaws.com`, `icanhazip.com`, `ifconfig.me`, `ident.me`, `api64.ipify.org`, `speed.cloudflare.com`, Google connectivity endpoints, Microsoft connectivity endpoints, and `example.com`. See [SECURITY.md](SECURITY.md).
@@ -243,7 +250,7 @@ All 41 parameters, their ranges, defaults, and validation rules are documented i
 ├── Run-Normal.cmd                   Elevated normal-run launcher
 ├── Run-ListExisting.cmd             Elevated inventory launcher
 ├── Run-ReportOnly.cmd               Elevated report-only launcher
-├── Run-ApplyRemovals.cmd            Elevated removal launcher
+├── Run-ApplyRemovals.cmd            Elevated removal + top-N retention launcher
 ├── docs/
 │   ├── SPECIFICATION.md             Normative reimplementation specification
 │   ├── PORTING.md                   Porting guide and API mapping

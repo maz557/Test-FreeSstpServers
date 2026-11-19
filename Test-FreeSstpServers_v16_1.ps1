@@ -1,3 +1,11 @@
+# v16.2.0: v16.1.2 + optional speed-ranked retention for existing profiles.
+#      - New -KeepBestExisting switch (used by Run-v16_1-APPLY-REMOVALS.cmd):
+#        after verification, working profiles are ranked by measured download
+#        speed. Keep all of them or only the fastest N. Working profiles that
+#        are not retained join the removal plan, but nothing is removed until
+#        the final exact uppercase YES.
+#      - INCONCLUSIVE, untested, and no-speed profiles are always kept. The
+#        45-column CSV schema and the -ReportOnly no-delete rule are unchanged.
 # v16.1.2: v16.1.1 + an explicit confirmation before a port-443-only final
 #        fallback list overrides -PortMode Non443.
 # v16.1.1: the proven v16 server-testing engine + existing Windows SSTP VPN
@@ -77,12 +85,14 @@
 
 .DESCRIPTION
     Test-FreeSstpServers_v16_1.ps1 keeps the proven v16 server-testing engine
-    and adds existing-profile verification with safer removal rules and the
-    v16 speed-test behaviour.
+    and adds existing-profile verification with safer removal rules, the v16
+    speed-test behaviour, and optional speed-ranked retention.
 
     Existing-profile maintenance:
       -VerifyExisting   Test every existing Windows SSTP profile and, after a
                         summary and an explicit YES, remove rejected profiles.
+      -KeepBestExisting With -VerifyExisting, rank working profiles by measured
+                        download speed and optionally keep only the fastest N.
       -PruneFirst       Run the same verification before a normal server run.
       -ReportOnly       Dry-run for the verification phase; never deletes.
       -ListExisting     List existing Windows VPN profiles and exit; no dial.
@@ -292,6 +302,16 @@
     verification, the script exits without fetching a server list.
     Combine with -ReportOnly for a dry run.
 
+.PARAMETER KeepBestExisting
+    Used with -VerifyExisting. After the verification, working profiles are
+    ranked by measured download speed. Type ALL to keep every working profile
+    (default), or TOP N to keep only the N fastest. Working profiles that are
+    not retained join the removal plan, but nothing is removed until the final
+    exact uppercase YES. Profiles with no usable speed sample, INCONCLUSIVE
+    profiles, skipped profiles, and non-SSTP profiles are always kept.
+    For a more stable ranking, use -SpeedSamples 2 or 3.
+    Cannot be combined with -ReportOnly or -PruneFirst.
+
 .PARAMETER PruneFirst
     Run the same existing-profile verification at the very start of a normal
     server-test run, then continue fetching/testing new servers. Removal still
@@ -345,6 +365,12 @@
 
     Test existing SSTP profiles; after the summary, type YES to remove the
     rejected ones. Press Enter to keep all of them.
+
+.EXAMPLE
+    .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
+
+    Test existing SSTP profiles, rank the working ones by measured download
+    speed, and choose ALL or TOP N. Nothing is removed until the final YES.
 
 .EXAMPLE
     .\Test-FreeSstpServers_v16_1.ps1 -PruneFirst -UseClipboard -PortMode Non443 -MaxServers 10
@@ -411,7 +437,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.1.2
+    Version  : v16.2.0
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -455,6 +481,7 @@ param(
     [switch]$TrySstpAfterTcpTimeout,
     [switch]$ContinueAfterLocalRas633,
     [switch]$VerifyExisting,
+    [switch]$KeepBestExisting,
     [switch]$PruneFirst,
     [switch]$ReportOnly,
     [switch]$ListExisting,
@@ -494,6 +521,12 @@ if ($FinalFallbackOnly) {
 }
 if ($VerifyExisting -and $PruneFirst) {
     throw '-VerifyExisting and -PruneFirst cannot be combined. Use -VerifyExisting for a standalone cleanup run or -PruneFirst before a normal run.'
+}
+if ($KeepBestExisting -and -not $VerifyExisting) {
+    throw '-KeepBestExisting requires -VerifyExisting. It is intended for the standalone apply-removals workflow and cannot be combined with -PruneFirst or any other mode.'
+}
+if ($KeepBestExisting -and $ReportOnly) {
+    throw '-KeepBestExisting cannot be combined with -ReportOnly. Run without -ReportOnly to preview the retention plan; press Enter at the final confirmation to keep everything.'
 }
 if ($ReportOnly -and -not ($VerifyExisting -or $PruneFirst)) {
     throw '-ReportOnly only affects existing-profile verification; combine it with -VerifyExisting or -PruneFirst.'
@@ -2880,13 +2913,71 @@ function Test-ExistingSstpProfile {
     return [pscustomobject]@{ Record = [pscustomobject]$record }
 }
 
+function Get-ExistingProfileRetentionPlan {
+    # Ranks healthy existing profiles by measured download speed without
+    # modifying any record. Latency is a deterministic tie-breaker; profiles
+    # without a usable speed sample are returned separately and always kept.
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$AcceptedProfiles
+    )
+
+    $ranked = @($AcceptedProfiles |
+        Where-Object { $null -ne $_.DownloadMbps } |
+        Sort-Object `
+            @{ Expression = { [double]$_.DownloadMbps }; Descending = $true },
+            @{ Expression = { if ($null -ne $_.VPNLatencyMs) { [double]$_.VPNLatencyMs } else { [double]::MaxValue } }; Ascending = $true },
+            @{ Expression = { [string]$_.ProfileName }; Ascending = $true })
+    $unranked = @($AcceptedProfiles | Where-Object { $null -eq $_.DownloadMbps })
+    return [pscustomobject]@{
+        Ranked   = $ranked
+        Unranked = $unranked
+    }
+}
+
+function Resolve-ExistingProfileRetentionSelection {
+    # Parses the post-test retention prompt. Empty input and ALL keep every
+    # ranked profile. TOP N keeps the N fastest; N must be at least 1 and
+    # smaller than the ranked count. Invalid input is returned with Valid=false.
+    param(
+        [AllowEmptyString()][string]$Selection,
+        [Parameter(Mandatory)][int]$RankedCount
+    )
+
+    $text = ([string]$Selection).Trim()
+    $text = [regex]::Replace($text, '\s+', ' ')
+    if ([string]::IsNullOrWhiteSpace($text) -or $text -match '^(?i:all)$') {
+        return [pscustomobject]@{ Valid = $true; KeepAll = $true; TopN = $RankedCount; Error = '' }
+    }
+
+    $match = [regex]::Match($text, '^(?i:top)\s+(\d+)$')
+    if (-not $match.Success) {
+        return [pscustomobject]@{
+            Valid = $false; KeepAll = $true; TopN = 0
+            Error = 'Type ALL to keep every working profile, or TOP N to keep the N fastest (for example TOP 3).'
+        }
+    }
+
+    $topN = 0L
+    if (-not [long]::TryParse($match.Groups[1].Value, [ref]$topN) -or $topN -lt 1) {
+        return [pscustomobject]@{
+            Valid = $false; KeepAll = $true; TopN = 0
+            Error = 'TOP N must be a whole number of at least 1.'
+        }
+    }
+    if ($topN -ge $RankedCount) {
+        return [pscustomobject]@{ Valid = $true; KeepAll = $true; TopN = $RankedCount; Error = '' }
+    }
+    return [pscustomobject]@{ Valid = $true; KeepAll = $false; TopN = [int]$topN; Error = '' }
+}
+
 function Invoke-ExistingProfileVerification {
     # Orchestrates the existing-profile verification phase:
     #   1. collect Windows SSTP VPN profiles (both phonebooks),
     #   2. confirm the no-VPN baseline interactively,
     #   3. test every profile with Test-ExistingSstpProfile,
-    #   4. show the summary, ask for an explicit YES, remove rejected profiles,
-    #   5. save the CSV report and return the counters.
+    #   4. optionally rank working profiles and ask ALL/TOP N,
+    #   5. show the removal plan, ask for an explicit YES, remove the selected
+    #      profiles, and save the CSV report; return the counters.
     param(
         [Parameter(Mandatory)][ValidateSet('Standalone', 'PruneFirst')][string]$Mode,
         [Parameter(Mandatory)][string]$RasdialPath,
@@ -2911,6 +3002,7 @@ function Invoke-ExistingProfileVerification {
         [Parameter(Mandatory)][ValidateSet('Balanced', 'Conservative')][string]$ExistingRemovalMode,
         [Parameter(Mandatory)][bool]$ContinueAfterLocalRas633,
         [Parameter(Mandatory)][bool]$TrySstpAfterTcpTimeout,
+        [Parameter(Mandatory)][bool]$KeepBestExisting,
         [Parameter(Mandatory)][bool]$ReportOnly
     )
 
@@ -2923,6 +3015,9 @@ function Invoke-ExistingProfileVerification {
     Write-Host ("================ {0} ================" -f $phaseLabel) -ForegroundColor Cyan
     Write-Host 'The test checks TCP, a real SSTP dial, IPv4/IPv6 public-IP changes, tunnel latency, and a download test.' -ForegroundColor DarkGray
     Write-Host ("Removal mode: {0}. Profiles are removed only after the summary and an explicit YES." -f $ExistingRemovalMode) -ForegroundColor DarkGray
+    if ($KeepBestExisting) {
+        Write-Host 'Speed-ranked retention: enabled. After testing, choose ALL or TOP N; no working profile is removed without the final YES.' -ForegroundColor DarkGray
+    }
 
     $allProfiles = @(Get-ExistingSstpVpnProfiles)
     $sstpProfiles = @($allProfiles | Where-Object { [string]$_.TunnelType -ieq 'Sstp' })
@@ -2930,7 +3025,7 @@ function Invoke-ExistingProfileVerification {
 
     $emptyResult = [pscustomobject]@{
         Checked = 0; Accepted = 0; Rejected = 0; Inconclusive = 0
-        Deleted = 0; DeleteFailed = 0; CsvPath = ''
+        NotRetained = 0; Deleted = 0; DeleteFailed = 0; CsvPath = ''
     }
 
     if ($allProfiles.Count -eq 0) {
@@ -3176,11 +3271,13 @@ function Invoke-ExistingProfileVerification {
 
     Write-Host ''
     Write-Host '================ EXISTING PROFILE VERIFICATION SUMMARY ================' -ForegroundColor Cyan
-    Write-Host ("Checked {0} SSTP profile(s): {1} accepted (kept) | {2} rejected (marked for removal) | {3} inconclusive (kept)." -f $sstpProfiles.Count, $accepted.Count, $rejected.Count, $uncertain.Count) -ForegroundColor Cyan
+    $acceptedSummaryLabel = if ($KeepBestExisting) { 'accepted' } else { 'accepted (kept)' }
+    Write-Host ("Checked {0} SSTP profile(s): {1} {2} | {3} rejected (marked for removal) | {4} inconclusive (kept)." -f $sstpProfiles.Count, $accepted.Count, $acceptedSummaryLabel, $rejected.Count, $uncertain.Count) -ForegroundColor Cyan
 
     if ($accepted.Count -gt 0) {
         Write-Host ''
-        Write-Host '====== KEPT: PROFILES THAT PASSED THE CHECKS ======' -ForegroundColor Green
+        $acceptedHeading = if ($KeepBestExisting) { '====== WORKING: PROFILES THAT PASSED THE CHECKS ======' } else { '====== KEPT: PROFILES THAT PASSED THE CHECKS ======' }
+        Write-Host $acceptedHeading -ForegroundColor Green
         $accepted | Select-Object ProfileName, Scope, ServerAddress, VPNLatencyMs, VPNLatencyMethod, DownloadMbps, DownloadComplete, VPNPublicIP, CredentialSource, Status | Format-Table -AutoSize | Out-Host
     }
     if ($uncertain.Count -gt 0) {
@@ -3196,18 +3293,110 @@ function Invoke-ExistingProfileVerification {
 
     $deletedCount = 0
     $deleteFailedCount = 0
+    $notRetained = @()
+    $retentionSelection = $null
 
-    if ($rejected.Count -gt 0) {
+    if ($KeepBestExisting) {
+        if ($stopFurtherChecks) {
+            Write-Host ''
+            Write-Host 'Speed-ranked retention is disabled because verification paused on an uncertain RAS state; only rejected profiles can be removed.' -ForegroundColor Yellow
+        } elseif ($accepted.Count -eq 0) {
+            Write-Host ''
+            Write-Host 'Speed-ranked retention is unavailable because no profile passed the checks.' -ForegroundColor Yellow
+        } else {
+            $retentionPlan = Get-ExistingProfileRetentionPlan -AcceptedProfiles $accepted
+            if ($retentionPlan.Ranked.Count -eq 0) {
+                Write-Host ''
+                Write-Host 'Speed-ranked retention is unavailable because no working profile produced a usable download-speed sample. All working profiles will be kept.' -ForegroundColor Yellow
+            } else {
+                Write-Host ''
+                Write-Host '====== WORKING PROFILES RANKED BY MEASURED DOWNLOAD SPEED ======' -ForegroundColor Cyan
+                $rankedRows = @()
+                for ($rankIndex = 0; $rankIndex -lt $retentionPlan.Ranked.Count; $rankIndex++) {
+                    $rankedRecord = $retentionPlan.Ranked[$rankIndex]
+                    $rankedRows += [pscustomobject][ordered]@{
+                        Rank             = $rankIndex + 1
+                        ProfileName      = [string]$rankedRecord.ProfileName
+                        Scope            = [string]$rankedRecord.Scope
+                        ServerAddress    = [string]$rankedRecord.ServerAddress
+                        DownloadMbps     = $rankedRecord.DownloadMbps
+                        DownloadComplete = [bool]$rankedRecord.DownloadComplete
+                        VPNLatencyMs     = $rankedRecord.VPNLatencyMs
+                        VPNLatencyMethod = [string]$rankedRecord.VPNLatencyMethod
+                        Status           = [string]$rankedRecord.Status
+                    }
+                }
+                $rankedRows | Format-Table -AutoSize | Out-Host
+
+                if ($retentionPlan.Unranked.Count -gt 0) {
+                    Write-Host 'Kept automatically (no usable download-speed sample):' -ForegroundColor Yellow
+                    $retentionPlan.Unranked | Select-Object ProfileName, Scope, ServerAddress, Status | Format-Table -AutoSize | Out-Host
+                }
+
+                while ($true) {
+                    $selectionText = ([string](Read-Host ("Type ALL to keep every working profile (default), or TOP N to keep only the N fastest (1-{0})" -f $retentionPlan.Ranked.Count))).Trim()
+                    $retentionSelection = Resolve-ExistingProfileRetentionSelection -Selection $selectionText -RankedCount $retentionPlan.Ranked.Count
+                    if ($retentionSelection.Valid) { break }
+                    Write-Host $retentionSelection.Error -ForegroundColor Yellow
+                }
+
+                if ($retentionSelection.KeepAll) {
+                    Write-Host 'Keeping every working profile.' -ForegroundColor Green
+                } else {
+                    $notRetained = @($retentionPlan.Ranked | Select-Object -Skip $retentionSelection.TopN)
+                    foreach ($rec in $notRetained) { $rec.PlannedAction = 'REMOVE_BY_CHOICE' }
+                    Write-Host ("Keeping the {0} fastest working profile(s); {1} working profile(s) will join the removal plan." -f $retentionSelection.TopN, $notRetained.Count) -ForegroundColor Cyan
+                }
+            }
+        }
+    }
+
+    $removalCandidates = @($rejected) + @($notRetained)
+
+    if ($removalCandidates.Count -gt 0) {
         if ($ReportOnly) {
-            foreach ($rec in $rejected) { $rec.ActionTaken = 'REPORT_ONLY_NOT_REMOVED' }
+            foreach ($rec in $removalCandidates) { $rec.ActionTaken = 'REPORT_ONLY_NOT_REMOVED' }
             Write-Host ''
             Write-Host 'REPORT-ONLY mode: no profiles were removed. Run again without -ReportOnly to apply the removals.' -ForegroundColor Yellow
         } else {
             Write-Host ''
-            $confirmRemove = (Read-Host ("Type YES to permanently remove the {0} rejected profile(s) from Windows; press Enter to keep them all" -f $rejected.Count)).Trim()
-            if ($confirmRemove -ceq 'YES') {
-                Write-Host ("Removing {0} rejected profile(s) ..." -f $rejected.Count) -ForegroundColor Cyan
+            if ($notRetained.Count -gt 0) {
+                Write-Host '====== REMOVAL PLAN: REJECTED + WORKING PROFILES NOT RETAINED ======' -ForegroundColor Yellow
+                Write-Host ("Broken/non-routing (REJECT): {0} | Working but not retained (TOP {1}): {2} | Total: {3}" -f $rejected.Count, $retentionSelection.TopN, $notRetained.Count, $removalCandidates.Count) -ForegroundColor Yellow
+                $removalRows = @()
                 foreach ($rec in $rejected) {
+                    $removalRows += [pscustomobject][ordered]@{
+                        Category      = 'Rejected'
+                        ProfileName   = [string]$rec.ProfileName
+                        Scope         = [string]$rec.Scope
+                        ServerAddress = [string]$rec.ServerAddress
+                        DownloadMbps  = $rec.DownloadMbps
+                        Status        = [string]$rec.Status
+                    }
+                }
+                foreach ($rec in $notRetained) {
+                    $removalRows += [pscustomobject][ordered]@{
+                        Category      = 'Not retained'
+                        ProfileName   = [string]$rec.ProfileName
+                        Scope         = [string]$rec.Scope
+                        ServerAddress = [string]$rec.ServerAddress
+                        DownloadMbps  = $rec.DownloadMbps
+                        Status        = [string]$rec.Status
+                    }
+                }
+                $removalRows | Format-Table -AutoSize | Out-Host
+            }
+
+            $confirmPrompt = if ($notRetained.Count -gt 0) {
+                "Type YES to permanently remove these {0} profile(s), including {1} working profile(s) you chose not to retain; press Enter to keep everything" -f $removalCandidates.Count, $notRetained.Count
+            } else {
+                "Type YES to permanently remove the {0} rejected profile(s) from Windows; press Enter to keep them all" -f $rejected.Count
+            }
+            $confirmRemove = ([string](Read-Host $confirmPrompt)).Trim()
+            if ($confirmRemove -ceq 'YES') {
+                $removingLabel = if ($notRetained.Count -gt 0) { 'profile(s)' } else { 'rejected profile(s)' }
+                Write-Host ("Removing {0} {1} ..." -f $removalCandidates.Count, $removingLabel) -ForegroundColor Cyan
+                foreach ($rec in $removalCandidates) {
                     $removal = Remove-ExistingVpnProfile -ProfileName ([string]$rec.ProfileName) -RasdialPath $RasdialPath -PreferredScope ([string]$rec.Scope) -SettleSeconds $RasRecoveryDelaySec
                     if ($removal.Removed) {
                         $rec.ActionTaken = 'REMOVED'
@@ -3222,13 +3411,21 @@ function Invoke-ExistingProfileVerification {
                     }
                 }
             } else {
-                foreach ($rec in $rejected) { $rec.ActionTaken = 'NOT_REMOVED_BY_USER_CHOICE' }
-                Write-Host 'Removal was not confirmed; all rejected profiles were kept.' -ForegroundColor Yellow
+                foreach ($rec in $removalCandidates) { $rec.ActionTaken = 'NOT_REMOVED_BY_USER_CHOICE' }
+                if ($notRetained.Count -gt 0) {
+                    Write-Host 'Removal was not confirmed; all listed profiles were kept.' -ForegroundColor Yellow
+                } else {
+                    Write-Host 'Removal was not confirmed; all rejected profiles were kept.' -ForegroundColor Yellow
+                }
             }
         }
     } else {
         Write-Host ''
-        Write-Host 'No existing SSTP profile was rejected; nothing to remove.' -ForegroundColor Green
+        if ($KeepBestExisting) {
+            Write-Host 'No existing SSTP profile was rejected or selected for removal; nothing to remove.' -ForegroundColor Green
+        } else {
+            Write-Host 'No existing SSTP profile was rejected; nothing to remove.' -ForegroundColor Green
+        }
     }
 
     $csvPath = Join-Path $PSScriptRoot ("sstp_existing_profile_check_{0}.csv" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -3244,13 +3441,18 @@ function Invoke-ExistingProfileVerification {
         Write-Host ("Verification was paused after: {0}. Start a fresh run to check the remaining profiles." -f $stopReason) -ForegroundColor Yellow
     }
 
-    Write-Host ("`nFinished existing-profile verification ({0}): {1} checked | {2} kept | {3} rejected | {4} removed | {5} removal failure(s) | {6} inconclusive." -f $Mode, $sstpProfiles.Count, $accepted.Count, $rejected.Count, $deletedCount, $deleteFailedCount, $uncertain.Count) -ForegroundColor Cyan
+    if ($KeepBestExisting) {
+        Write-Host ("`nFinished existing-profile verification ({0}): {1} checked | {2} accepted | {3} working not retained | {4} rejected | {5} removed | {6} removal failure(s) | {7} inconclusive." -f $Mode, $sstpProfiles.Count, $accepted.Count, $notRetained.Count, $rejected.Count, $deletedCount, $deleteFailedCount, $uncertain.Count) -ForegroundColor Cyan
+    } else {
+        Write-Host ("`nFinished existing-profile verification ({0}): {1} checked | {2} kept | {3} rejected | {4} removed | {5} removal failure(s) | {6} inconclusive." -f $Mode, $sstpProfiles.Count, $accepted.Count, $rejected.Count, $deletedCount, $deleteFailedCount, $uncertain.Count) -ForegroundColor Cyan
+    }
 
     return [pscustomobject]@{
         Checked = $sstpProfiles.Count
         Accepted = $accepted.Count
         Rejected = $rejected.Count
         Inconclusive = $uncertain.Count
+        NotRetained = $notRetained.Count
         Deleted = $deletedCount
         DeleteFailed = $deleteFailedCount
         CsvPath = $csvPath
@@ -3289,6 +3491,7 @@ if ($VerifyExisting -or $PruneFirst) {
         ExistingRemovalMode = $ExistingRemovalMode
         ContinueAfterLocalRas633 = [bool]$ContinueAfterLocalRas633
         TrySstpAfterTcpTimeout = [bool]$TrySstpAfterTcpTimeout
+        KeepBestExisting = [bool]$KeepBestExisting
         ReportOnly = [bool]$ReportOnly
     }
     $null = Invoke-ExistingProfileVerification @verifyParams

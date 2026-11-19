@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.1.2 - Reimplementation Specification
+# Test-FreeSstpServers v16.2.0 - Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -8,20 +8,20 @@
 
 | Item | Value |
 |---|---|
-| Document ID | `PRJ-SSTP-V161-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.1.2` |
-| Document version | `1.2` |
-| Date | 2026-11-12 |
-| Status | Baseline - includes v16.1.1 profile naming and the v16.1.2 fallback port confirmation |
+| Document ID | `PRJ-SSTP-V162-EN` |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.2.0` |
+| Document version | `1.3` |
+| Date | 2026-11-19 |
+| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, and v16.2.0 speed-ranked retention |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,287 lines, 211,348 bytes |
+| Reference size | 4,490 lines, 223,050 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1.
 
 ### Normative language
 
@@ -81,6 +81,7 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 - Scoring and ranking.
 - Adding the best confirmed servers as per-user Windows VPN profiles.
 - Inventory, verification, and controlled removal of existing per-user and AllUser SSTP profiles.
+- Optional speed-ranked retention of working existing profiles.
 - Console reporting and CSV output.
 
 ### 1.3. Out of scope
@@ -96,16 +97,17 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 
 A port is accepted when:
 
-1. All 41 parameters, aliases, defaults, and ranges match.
-2. All validation rules `V1`–`V10` fire in the same order with the same messages.
+1. All 42 parameters, aliases, defaults, and ranges match.
+2. All validation rules `V1`–`V12` fire in the same order with the same messages.
 3. All status, verdict, planned-action, and action-taken strings match exactly.
 4. The four CSV schemas match exactly (43, 45, 8, and 7 columns).
 5. `-VerifyExisting -ReportOnly` never deletes a profile.
 6. Existing-profile deletion requires an exact uppercase `YES`.
 7. Every `INCONCLUSIVE` verdict maps to `KEEP`.
 8. A partial download with real bytes can still produce `WORKING_TUNNEL_AND_INTERNET`.
-9. The same input snapshot and mocked measurements produce the same decisions.
-10. The acceptance checklist in [TESTING.md](TESTING.md) is complete.
+9. `-KeepBestExisting` never removes an `INCONCLUSIVE`, skipped, non-SSTP, or no-speed profile.
+10. The same input snapshot and mocked measurements produce the same decisions.
+11. The acceptance checklist in [TESTING.md](TESTING.md) is complete.
 
 ---
 
@@ -772,6 +774,7 @@ After merge and port filtering:
 | `-PriorityServer` | string | `''` | `host[:port]` to move to the front of the queue. |
 | `-ListOnly` | switch | false | Acquire, filter, sort, and save a snapshot, then exit. |
 | `-VerifyExisting` | switch | false | Standalone existing-profile verification, then exit. |
+| `-KeepBestExisting` | switch | false | With `-VerifyExisting`, rank working profiles by measured speed and keep `ALL` or `TOP N`. |
 | `-PruneFirst` | switch | false | Verify existing profiles, then continue with the normal run. |
 | `-ReportOnly` | switch | false | Report only during the existing-profile phase; never delete. |
 | `-ListExisting` | switch | false | List existing profiles and exit; no dial. |
@@ -853,6 +856,7 @@ ListOnly                  = false
 TrySstpAfterTcpTimeout    = false
 ContinueAfterLocalRas633  = false
 VerifyExisting            = false
+KeepBestExisting          = false
 PruneFirst                = false
 ReportOnly                = false
 ListExisting              = false
@@ -875,12 +879,14 @@ These rules run **before** any environment check and MUST preserve both their or
 | V4 | `FinalFallbackOnly` and (`ServerListCsv` or `HtmlFile`) | `-FinalFallbackOnly cannot be combined with -ServerListCsv or -HtmlFile.` |
 | V5 | `FinalFallbackOnly` and empty `FinalFallbackUrl` | `-FinalFallbackOnly requires a non-empty -FinalFallbackUrl value.` |
 | V6 | `VerifyExisting` and `PruneFirst` | `-VerifyExisting and -PruneFirst cannot be combined. Use -VerifyExisting for a standalone cleanup run or -PruneFirst before a normal run.` |
+| V11 | `KeepBestExisting` without `VerifyExisting` | `-KeepBestExisting requires -VerifyExisting. It is intended for the standalone apply-removals workflow and cannot be combined with -PruneFirst or any other mode.` |
+| V12 | `KeepBestExisting` and `ReportOnly` | `-KeepBestExisting cannot be combined with -ReportOnly. Run without -ReportOnly to preview the retention plan; press Enter at the final confirmation to keep everything.` |
 | V7 | `ReportOnly` without `VerifyExisting`/`PruneFirst` | `-ReportOnly only affects existing-profile verification; combine it with -VerifyExisting or -PruneFirst.` |
 | V8 | (`VerifyExisting` or `PruneFirst`) and (`ExtraSourceOnly` or `FinalFallbackOnly` or `ListOnly` or `ListExisting`) | `-VerifyExisting and -PruneFirst cannot be combined with -ExtraSourceOnly, -FinalFallbackOnly, -ListOnly, or -ListExisting.` |
 | V9 | `ListExisting` and (`VerifyExisting` or `PruneFirst` or `ListOnly` or `ExtraSourceOnly` or `FinalFallbackOnly`) | `-ListExisting is a standalone inventory command; do not combine it with other modes.` |
 | V10 | `ListExisting` and `ReportOnly` | `-ListExisting does not delete anything; -ReportOnly is not needed.` |
 
-**Evaluation order:** V1 → V2 → V3/V4/V5 → V6 → V7 → V8 → V9 → V10. Preserve this order so comparative message tests remain stable.
+**Evaluation order:** V1 → V2 → V3/V4/V5 → V6 → V11 → V12 → V7 → V8 → V9 → V10. The new V11/V12 checks run before the older V7–V10 checks so a new-mode mistake is reported precisely; all existing valid and invalid combinations keep their previous messages.
 
 ### 5.8. Valid mode matrix
 
@@ -890,6 +896,7 @@ These rules run **before** any environment check and MUST preserve both their or
 | Inventory | `-ListExisting` | List both phonebooks | `sstp_existing_profiles_<ts>.csv` |
 | Verify dry-run | `-VerifyExisting -ReportOnly` | Test SSTP profiles; no deletion | `sstp_existing_profile_check_<ts>.csv` |
 | Verify apply | `-VerifyExisting` | Test + summary + `YES` + removal | CSV + removal |
+| Verify + best | `-VerifyExisting -KeepBestExisting` | Test + speed ranking + `ALL`/`TOP N` + `YES` + removal | CSV + removal |
 | Prune + normal | `-PruneFirst` | Existing-profile phase + new-server test | Two CSVs |
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion + new-server test | Two CSVs |
 | List only | `-ListOnly` | Acquire/sort/save snapshot | `sstp_server_list_<ts>.csv` |
@@ -912,6 +919,9 @@ These rules run **before** any environment check and MUST preserve both their or
 
 # Test and remove after an explicit YES.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting
+
+# Test, rank working profiles by speed, and keep ALL or only the fastest N.
+.\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 
 # Prune existing profiles, then test 10 Non443 servers from the clipboard.
 .\Test-FreeSstpServers_v16_1.ps1 -PruneFirst -UseClipboard -PortMode Non443 -MaxServers 10
@@ -1497,6 +1507,7 @@ This phase is enabled only by `-ListExisting`, `-VerifyExisting`, or `-PruneFirs
   - `PruneFirst` → `PRUNE FIRST: VERIFY EXISTING WINDOWS SSTP VPN PROFILES`
 - Print a description: TCP, real dial, IP change, latency, download.
 - Print the removal mode and the "only after summary and YES" rule.
+- If `KeepBestExisting=true`, print the speed-ranked retention notice.
 - Collect all profiles.
 - `sstpProfiles` = `TunnelType -ieq 'Sstp'`.
 - `nonSstpProfiles` = the rest.
@@ -1857,26 +1868,93 @@ accepted = results where Verdict == "ACCEPT"
 rejected = results where Verdict == "REJECT"
 uncertain = results where Verdict == "INCONCLUSIVE"
 
-print "Checked <N> SSTP profile(s): <a> accepted (kept) | <r> rejected (marked for removal) | <u> inconclusive (kept)."
+print "Checked <N> SSTP profile(s): <a> accepted | <r> rejected (marked for removal) | <u> inconclusive (kept)."
+      (when KeepBestExisting is true, the accepted count is not labelled "kept")
+      or the v16.1.2 wording "accepted (kept)" when KeepBestExisting is false
 
 if accepted: table ProfileName, Scope, ServerAddress, VPNLatencyMs, VPNLatencyMethod, DownloadMbps, DownloadComplete, VPNPublicIP, CredentialSource, Status
 if uncertain: table ProfileName, Scope, ServerAddress, Status, Error
 if rejected: table ProfileName, Scope, ServerAddress, Status, Error
+
+if KeepBestExisting:
+    run the speed-ranked retention step in Section 7.13.1
+    removalCandidates = rejected + notRetained
+else:
+    removalCandidates = rejected
 ```
 
 Then:
 
-- If `rejected.Count == 0` → message: "No existing SSTP profile was rejected; nothing to remove."
+- If `removalCandidates.Count == 0`:
+  - `KeepBestExisting=true` → message: "No existing SSTP profile was rejected or selected for removal; nothing to remove."
+  - Otherwise → message: "No existing SSTP profile was rejected; nothing to remove."
 - If `ReportOnly`:
-  - For each rejected profile: `ActionTaken = "REPORT_ONLY_NOT_REMOVED"`.
+  - For each removal candidate: `ActionTaken = "REPORT_ONLY_NOT_REMOVED"`.
   - Message: "REPORT-ONLY mode: no profiles were removed...".
+  - `KeepBestExisting` cannot be combined with `ReportOnly` (V12), so in practice the candidates are rejected profiles only.
 - Otherwise:
-  - `confirmRemove = Read-Host("Type YES to permanently remove the <N> rejected profile(s) from Windows; press Enter to keep them all")`.
+  - If `notRetained.Count > 0`, print the removal plan:
+    - Heading: `====== REMOVAL PLAN: REJECTED + WORKING PROFILES NOT RETAINED ======`.
+    - Counts: `Broken/non-routing (REJECT): <r> | Working but not retained (TOP <N>): <m> | Total: <r+m>`.
+    - Table: Category (`Rejected` / `Not retained`), ProfileName, Scope, ServerAddress, DownloadMbps, Status.
+  - Prompt:
+    - If `notRetained.Count > 0`: `Type YES to permanently remove these <r+m> profile(s), including <m> working profile(s) you chose not to retain; press Enter to keep everything`.
+    - Otherwise: `Type YES to permanently remove the <r> rejected profile(s) from Windows; press Enter to keep them all`.
   - Only when `confirmRemove -ceq 'YES'` (case-sensitive):
-    - For each rejected profile: `Remove-ExistingVpnProfile`.
+    - For each removal candidate: `Remove-ExistingVpnProfile`.
     - Success → `ActionTaken=REMOVED`, `Deleted++`.
     - Failure → `ActionTaken=REMOVE_FAILED`, `DeleteFailed++`, append the error (maximum 1,000 characters).
-  - Any other input (including `yes`, `Yes`, `Y`) → `ActionTaken=NOT_REMOVED_BY_USER_CHOICE` and message: "Removal was not confirmed; all rejected profiles were kept."
+  - Any other input (including `yes`, `Yes`, `Y`) → `ActionTaken=NOT_REMOVED_BY_USER_CHOICE` for every removal candidate:
+    - If `notRetained.Count > 0` → message: "Removal was not confirmed; all listed profiles were kept."
+    - Otherwise → message: "Removal was not confirmed; all rejected profiles were kept."
+
+### 7.13.1. Speed-ranked retention (`-KeepBestExisting`)
+
+This step runs after the health summary and before the final removal confirmation. It is enabled only when `KeepBestExisting=true` and `ReportOnly=false` (V11/V12).
+
+1. If `stopFurtherChecks=true`:
+   - Print: "Speed-ranked retention is disabled because verification paused on an uncertain RAS state; only rejected profiles can be removed."
+   - Skip the ranking step. `notRetained` stays empty.
+2. If `accepted.Count == 0`:
+   - Print: "Speed-ranked retention is unavailable because no profile passed the checks."
+   - Skip the ranking step.
+3. Build the retention plan:
+   - `ranked = accepted where DownloadMbps != null`, sorted by:
+     1. `DownloadMbps` descending.
+     2. `VPNLatencyMs` ascending; null latency sorts last.
+     3. `ProfileName` ascending.
+   - `unranked = accepted where DownloadMbps == null`.
+4. If `ranked.Count == 0`:
+   - Print: "Speed-ranked retention is unavailable because no working profile produced a usable download-speed sample. All working profiles will be kept."
+   - Skip the prompt.
+5. Print the ranked table:
+   - Columns: `Rank, ProfileName, Scope, ServerAddress, DownloadMbps, DownloadComplete, VPNLatencyMs, VPNLatencyMethod, Status`.
+6. If `unranked.Count > 0`:
+   - Print: "Kept automatically (no usable download-speed sample):".
+   - Table: `ProfileName, Scope, ServerAddress, Status`.
+   - These records are never added to `notRetained`.
+7. Prompt:
+   `Type ALL to keep every working profile (default), or TOP N to keep only the N fastest (1-<ranked.Count>)`.
+8. Parse the answer:
+   - Empty or `ALL` (case-insensitive) → keep all.
+   - `TOP N` (case-insensitive, one or more spaces) → `N` must be an integer of at least 1.
+     - `N >= ranked.Count` → keep all.
+     - `N < ranked.Count` → keep the first `N` ranked profiles.
+   - Anything else → print the error and prompt again.
+9. If not keep-all:
+   - `notRetained = ranked[N..end]`.
+   - Set `PlannedAction="REMOVE_BY_CHOICE"` on each not-retained record.
+   - Print: "Keeping the <N> fastest working profile(s); <m> working profile(s) will join the removal plan."
+10. The final removal set is `rejected + notRetained`; the confirmation rules in Section 7.13 apply unchanged.
+
+**Safety invariants for this step:**
+
+- Only `ACCEPT` records with a real `DownloadMbps` value are rankable.
+- `INCONCLUSIVE`, `SKIPPED`, non-SSTP, and `ACCEPT` records with `DownloadMbps=null` are never in `notRetained`.
+- `PlannedAction=REMOVE_BY_CHOICE` MUST NOT appear with `Verdict=INCONCLUSIVE` or `Verdict=SKIPPED`.
+- The exact uppercase `YES` rule is unchanged.
+- If the operator declines the final confirmation, every removal candidate gets `ActionTaken=NOT_REMOVED_BY_USER_CHOICE`.
+- The existing-profile CSV keeps its 45 columns; only the `PlannedAction` value set grows.
 
 ### 7.14. Safe removal (`Remove-ExistingVpnProfile`)
 
@@ -1927,18 +2005,27 @@ Checked      = sstpProfiles.Count
 Accepted     = accepted.Count
 Rejected     = rejected.Count
 Inconclusive = uncertain.Count
+NotRetained  = notRetained.Count
 Deleted      = number of successful removals
 DeleteFailed = number of failed removals
 CsvPath      = CSV path or ''
 ```
 
-Final message:
+Final message when `KeepBestExisting=false`:
 
 ```text
 Finished existing-profile verification (<Mode>): <Checked> checked | <kept> kept | <Rejected> rejected | <Deleted> removed | <DeleteFailed> removal failure(s) | <Inconclusive> inconclusive.
 ```
 
 Here `kept = Accepted.Count` (not accepted + uncertain). The exact script text is the contract.
+
+Final message when `KeepBestExisting=true`:
+
+```text
+Finished existing-profile verification (<Mode>): <Checked> checked | <Accepted> accepted | <NotRetained> working not retained | <Rejected> rejected | <Deleted> removed | <DeleteFailed> removal failure(s) | <Inconclusive> inconclusive.
+```
+
+`NotRetained` is the number of working profiles selected for non-retention, not the number actually removed; `Deleted` reports the actual removals. If the operator declines the final confirmation, `Deleted` stays 0.
 
 ### 7.17. Verification pause message
 
@@ -1952,6 +2039,7 @@ Remaining profiles are recorded as `SKIPPED_AFTER_RAS_STATE_UNCERTAIN`; no dial 
 
 ### 7.18. `-PruneFirst` behavior
 
+- `-KeepBestExisting` is not available with `-PruneFirst` (V11).
 - Runs the same verification phase with `Mode=PruneFirst`.
 - After the phase (with or without removal), prints:
   `Prune-first phase finished; continuing with the normal server-test run.`
@@ -2013,26 +2101,29 @@ Remaining profiles are recorded as `SKIPPED_AFTER_RAS_STATE_UNCERTAIN`; no dial 
 | `SKIPPED_AFTER_RAS_STATE_UNCERTAIN` | Remaining profiles after a pause | `INCONCLUSIVE` | `KEEP` | `KEPT` | — |
 | `NOT_SSTP_SKIPPED` | Non-SSTP profile | `SKIPPED` | `KEEP` | `NOT_APPLICABLE` | — |
 
+**Retention note:** the `PlannedAction` values above are assigned by the tester. `-KeepBestExisting` may later change a `WORKING_TUNNEL_AND_INTERNET` record's `PlannedAction` from `KEEP` to `REMOVE_BY_CHOICE`; no other status is eligible for that change.
+
 ### 8.3. Verdict → PlannedAction matrix
 
 | Verdict | PlannedAction | Meaning |
 |---|---|---|
 | `ACCEPT` | `KEEP` | Profile is healthy; leave it untouched. |
+| `ACCEPT` | `REMOVE_BY_CHOICE` | Profile is healthy, but the operator chose not to retain it with `-KeepBestExisting`. Removal still requires the final `YES`. |
 | `REJECT` | `DELETE` | Profile is dead or does not route; candidate for removal after `YES`. |
 | `INCONCLUSIVE` | `KEEP` | Not enough evidence; always keep. |
 | `SKIPPED` | `KEEP` | Not tested (non-SSTP); keep. |
 
-**`INCONCLUSIVE` must never be combined with `DELETE`.** Assert this invariant in tests.
+**`INCONCLUSIVE` must never be combined with `DELETE` or `REMOVE_BY_CHOICE`.** **`SKIPPED` must never be combined with `DELETE` or `REMOVE_BY_CHOICE`.** Assert these invariants in tests.
 
 ### 8.4. ActionTaken matrix
 
 | ActionTaken | Meaning | When |
 |---|---|---|
-| `KEPT` | Profile kept | ACCEPT/INCONCLUSIVE or Conservative. |
-| `REMOVED` | Successful removal | Only after `YES` and confirmed removal. |
-| `REMOVE_FAILED` | Removal attempt failed | After `YES` but removal/verification failed. |
+| `KEPT` | Profile kept | Retained ACCEPT, INCONCLUSIVE, or Conservative. |
+| `REMOVED` | Successful removal | Only after `YES` and confirmed removal; applies to rejected and not-retained working profiles. |
+| `REMOVE_FAILED` | Removal attempt failed | After `YES` but removal/verification failed; applies to rejected and not-retained working profiles. |
 | `REPORT_ONLY_NOT_REMOVED` | Reported without removal | `-ReportOnly` with rejected profiles. |
-| `NOT_REMOVED_BY_USER_CHOICE` | User did not confirm | Input other than `YES`. |
+| `NOT_REMOVED_BY_USER_CHOICE` | User did not confirm | Input other than `YES`; applies to every removal candidate, including not-retained working profiles. |
 | `NOT_APPLICABLE` | Not applicable | Non-SSTP profile. |
 
 ### 8.5. Evidence-based decision matrix (existing-profile phase)
@@ -2069,13 +2160,14 @@ Remaining profiles are recorded as `SKIPPED_AFTER_RAS_STATE_UNCERTAIN`; no dial 
 ### 8.7. Testable invariants
 
 1. `Status` is never empty in a final record (except very early errors caught and filled).
-2. `Verdict=ACCEPT` ⇒ `PlannedAction=KEEP` and `ActionTaken=KEPT`.
+2. `Verdict=ACCEPT` ⇒ `PlannedAction` is `KEEP` or `REMOVE_BY_CHOICE`; retained ACCEPT records have `ActionTaken=KEPT`.
 3. `Verdict=REJECT` ⇒ `PlannedAction=DELETE` and `ActionTaken` is one of `—`, `REMOVED`, `REMOVE_FAILED`, `REPORT_ONLY_NOT_REMOVED`, `NOT_REMOVED_BY_USER_CHOICE`.
 4. `Verdict=INCONCLUSIVE` ⇒ `PlannedAction=KEEP` and `ActionTaken=KEPT` (even after a failed removal attempt, the verdict returns to INCONCLUSIVE).
 5. `PostTestDisconnectFailed=true` ⇒ `Verdict=INCONCLUSIVE` and `PlannedAction=KEEP`.
 6. `NOT_SSTP_SKIPPED` ⇒ `Verdict=SKIPPED` and `ActionTaken=NOT_APPLICABLE`.
-7. In the new flow, `WORKING_TUNNEL_AND_INTERNET` requires `PublicIPChanged=Yes` and `DownloadMbps != null`.
-8. In the existing flow, `WORKING_TUNNEL_AND_INTERNET` requires a successful download; `WORKING_TUNNEL_CONNECTIVITY_ONLY` requires successful internet and no download.
+7. `PlannedAction=REMOVE_BY_CHOICE` ⇒ `Verdict=ACCEPT` and `DownloadMbps != null`; it never appears on INCONCLUSIVE, SKIPPED, or no-speed records.
+8. In the new flow, `WORKING_TUNNEL_AND_INTERNET` requires `PublicIPChanged=Yes` and `DownloadMbps != null`.
+9. In the existing flow, `WORKING_TUNNEL_AND_INTERNET` requires a successful download; `WORKING_TUNNEL_CONNECTIVITY_ONLY` requires successful internet and no download.
 
 ---
 
@@ -2402,7 +2494,7 @@ RasSetCredentials(
 | 39 | `InternetCheckUrl` | string | Successful URL. |
 | 40 | `Status` | string | Status. |
 | 41 | `Verdict` | string | Verdict. |
-| 42 | `PlannedAction` | string | KEEP/DELETE. |
+| 42 | `PlannedAction` | string | KEEP/DELETE/REMOVE_BY_CHOICE. |
 | 43 | `ActionTaken` | string | Action. |
 | 44 | `PostTestDisconnectFailed` | bool | Post-test disconnect failed. |
 | 45 | `Error` | string | Detail. |
@@ -2742,6 +2834,7 @@ SKIPPED
 ```text
 KEEP
 DELETE
+REMOVE_BY_CHOICE
 ```
 
 ### A.5. ActionTaken values

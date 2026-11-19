@@ -1,6 +1,6 @@
 # Porting Guide
 
-> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.1.2` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
+> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.2.0` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
 
 > **AI-assisted porting.** If you want an AI coding assistant to generate the port, use [PORTING-PROMPT.md](PORTING-PROMPT.md). It contains a copy-paste brief, phase prompts, and a definition-of-done checklist.
 
@@ -15,9 +15,10 @@ A port is successful when the observable behavior matches the reference script:
 - the same CSV file names, columns, column order, and serialization;
 - the same safety rules, including exact-`YES` deletion and `-ReportOnly` behavior;
 - the same final-fallback port confirmation when a port-443-only list conflicts with `-PortMode Non443`;
+- the same speed-ranked retention behavior (`ALL` / `TOP N`) and the same `REMOVE_BY_CHOICE` exclusion rules;
 - the same ranking and top-N selection.
 
-Internal structure, concurrency for non-VPN work, and UI styling are free to change. The reference implementation is a single 4,287-line PowerShell script; a port SHOULD split it into modules.
+Internal structure, concurrency for non-VPN work, and UI styling are free to change. The reference implementation is a single PowerShell script; a port SHOULD split it into modules.
 
 ### 1.1. Reference environment
 
@@ -60,7 +61,7 @@ SstpTool.sln
 ### 2.2. C# implementation notes
 
 1. **CLI:** `System.CommandLine` is suitable, but parameter names and the `PortFilter` alias MUST be preserved. Model switches as `bool` with a default of `false`.
-2. **Validation:** keep the exact `V1`–`V10` order and messages. Use a dedicated `ConfigurationException`.
+2. **Validation:** keep the exact `V1`–`V12` order and messages. Use a dedicated `ConfigurationException`.
 3. **VpnClient:** two options:
    - Host `Microsoft.PowerShell.SDK` and run cmdlets in a runspace; this is closest to the reference.
    - P/Invoke directly to `rasapi32.dll` (`RasSetEntryProperties`, `RasDial`, `RasHangUp`, `RasGetEntryProperties`); more control, more complexity.
@@ -158,7 +159,7 @@ Suggested mapping:
 | `P1` | CLI, validation, modes, console reporting | `-Help` and `-ListExisting` work |
 | `P2` | TCP, temporary profile, `rasdial`, cleanup | One real server tested |
 | `P3` | Route, latency, download, statuses, ranking | Full new-server run works |
-| `P4` | Existing-profile phase and controlled removal | `-VerifyExisting -ReportOnly` and apply work |
+| `P4` | Existing-profile phase, controlled removal, and speed-ranked retention | `-VerifyExisting -ReportOnly`, apply, and `-KeepBestExisting` work |
 | `P5` | Top N, country + host naming, credential storage, duplicate detection | Profiles are added correctly |
 | `P6` | Parity testing, packaging, documentation | Release candidate |
 
@@ -178,7 +179,8 @@ A realistic estimate for one full-time developer with a Windows VM is 6–9 week
 | Property-order differences | Define column order explicitly in the writer |
 | Console differences | Preserve key text and columns; color is optional |
 | Clipboard unavailable | Fall back to an HTML file |
-| Partial downloads rejected by mistake | Keep the v16.1.2 rule: real bytes are enough; `DownloadComplete=False` does not prevent acceptance |
+| Partial downloads rejected by mistake | Keep the v16.2.0 rule: real bytes are enough; `DownloadComplete=False` does not prevent acceptance |
+| Working profiles removed by a ranking bug | Rank only ACCEPT records with `DownloadMbps != null`; keep INCONCLUSIVE, SKIPPED, and no-speed records; require the final exact `YES` |
 
 ---
 

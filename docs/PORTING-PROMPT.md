@@ -1,6 +1,6 @@
 # AI Porting Prompt
 
-> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.1.2` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.1.2, not merely compile.
+> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.2.0` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.2.0, not merely compile.
 
 ---
 
@@ -21,8 +21,9 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 - The tool is **Windows-only** because it uses `VpnClient`, `rasdial.exe`, the RAS phonebook, and Windows public-IP behavior. A non-Windows port can reuse the parsers, scorer, CSV writer, and CLI, but cannot provide the VPN workflows without a Windows host or a Windows VM.
 - `docs/SPECIFICATION.md` is the **normative contract**. If the reference script and the specification ever disagree, stop and report the conflict; do not guess.
 - The reference script is **behavior to match**, not code to translate line by line. A port may use different modules, classes, or idioms.
-- The published v16.1.2 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
+- The published v16.2.0 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
 - Existing-profile deletion is a destructive operation. It requires an exact uppercase `YES`, and `-ReportOnly` must never delete.
+- With `-VerifyExisting -KeepBestExisting`, only `ACCEPT` profiles with a real `DownloadMbps` value are ranked. `INCONCLUSIVE`, `SKIPPED`, non-SSTP, and no-speed profiles are always kept, even when the operator chooses `TOP N`.
 - When the final fallback source is the only source and all of its entries use port 443, the script asks before overriding `-PortMode Non443` to `All`. Declining must stop without testing anything.
 
 ---
@@ -30,7 +31,7 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 ## 3. Copy-paste prompt
 
 ```text
-You are implementing a behavior-compatible port of Test-FreeSstpServers v16.1.2.
+You are implementing a behavior-compatible port of Test-FreeSstpServers v16.2.0.
 
 Target language: <TARGET_LANGUAGE>
 Target runtime and OS: <TARGET_RUNTIME_AND_OS>
@@ -55,12 +56,13 @@ Your task:
 - Do not invent new parameters, statuses, CSV columns, or messages.
 
 Non-negotiable contract:
-- All 41 parameters, their aliases, defaults, and ranges. The alias `PortFilter` must work.
-- Validation rules V1 through V10, in the same order, with the same messages.
+- All 42 parameters, their aliases, defaults, and ranges. The alias `PortFilter` must work.
+- Validation rules V1 through V12, in the same order, with the same messages.
 - Exact status, verdict, planned-action, and action-taken strings. Do not translate or rename them.
 - CSV schemas and column order: 43 columns for new-server results, 45 for existing-profile checks, 8 for snapshots, 7 for inventory. Use invariant culture, CRLF, and True/False booleans.
 - Partial downloads count when curl receives real bytes over HTTP 2xx, even when DownloadComplete=False. Do not require the full requested byte count.
 - Existing profiles are removed only after a summary and an exact uppercase YES. -ReportOnly never deletes. INCONCLUSIVE always maps to KEEP.
+- -KeepBestExisting ranks only ACCEPT profiles with a real DownloadMbps value. No-speed, INCONCLUSIVE, SKIPPED, and non-SSTP profiles are always kept. A not-retained working profile uses PlannedAction=REMOVE_BY_CHOICE and still requires the final exact YES.
 - Only one VPN connection may be active at a time. Clean up temporary profiles in a finally block. Pause later dials after an uncertain RAS state.
 - Install only WORKING_TUNNEL_AND_INTERNET servers. Deduplicate by host:port. Never overwrite an existing profile.
 - Name new profiles "<country> - <host>", use "Unknown" when the country is empty, and append "-p<port>" for non-443 endpoints.
@@ -69,18 +71,18 @@ Non-negotiable contract:
 
 Phases:
 - P0: domain model, parsers, merger, scorer, CSV writers, and unit tests. No VPN required.
-- P1: CLI, V1-V10 validation, mode precedence, and console reporting. -Help and -ListExisting must work.
+- P1: CLI, V1-V12 validation, mode precedence, and console reporting. -Help and -ListExisting must work.
 - P2: TCP probe, temporary profile creation and verification, rasdial, and cleanup.
 - P3: route verification, latency, download, status classification, and ranking.
-- P4: existing-profile inventory, verification, report-only, and controlled removal.
+- P4: existing-profile inventory, verification, report-only, controlled removal, and speed-ranked retention.
 - P5: top-N installation, credential storage, and duplicate detection.
 - P6: parity tests, packaging, and user documentation.
 
 Definition of done:
 - The project builds and starts on the target runtime.
-- Unit tests cover parsers, host validation, ping/uptime parsing, merging, scoring, V1-V10, CSV serialization, and the state machine.
+- Unit tests cover parsers, host validation, ping/uptime parsing, merging, scoring, V1-V12, CSV serialization, the state machine, speed ranking, and the ALL/TOP N parser.
 - CSV headers match the reference exactly. A header mismatch is a hard failure.
-- The safety tests pass: -ReportOnly never deletes; Enter, yes, Yes, and Y never delete; only YES deletes; INCONCLUSIVE is kept; a partial download is accepted.
+- The safety tests pass: -ReportOnly never deletes; Enter, yes, Yes, and Y never delete; only YES deletes; INCONCLUSIVE is kept; a partial download is accepted; no-speed and SKIPPED profiles are never selected by TOP N.
 - The golden CSV comparison passes for the same input snapshot and parameters.
 - Packaging and usage instructions are complete for the target platform.
 
@@ -96,10 +98,10 @@ If you prefer to review each phase separately, send these follow-ups after the m
 | Phase | Follow-up prompt |
 |---|---|
 | P0 | "Implement P0 only: domain model, parsers, merger, scorer, CSV writers, and unit tests. Do not call Windows APIs yet. Show the test results." |
-| P1 | "Implement P1: CLI, V1-V10 validation, mode precedence, and console reporting. `-Help` must work without Administrator rights. Do not dial yet." |
+| P1 | "Implement P1: CLI, V1-V12 validation, mode precedence, and console reporting. `-Help` must work without Administrator rights. Do not dial yet." |
 | P2 | "Implement P2: TCP probe, temporary profile creation and verification, `rasdial`, and cleanup. Use mocks for tests; do not require a real VPN in CI." |
 | P3 | "Implement P3: route verification, latency, download, status classification, and ranking. Preserve the partial-download rule." |
-| P4 | "Implement P4: existing-profile inventory, verification, report-only, and controlled removal. Preserve the exact-YES rule and scope fidelity." |
+| P4 | "Implement P4: existing-profile inventory, verification, report-only, controlled removal, and speed-ranked retention. Preserve the exact-YES rule, scope fidelity, and the REMOVE_BY_CHOICE exclusions." |
 | P5 | "Implement P5: top-N installation, `RasSetCredentials`, duplicate detection, and profile naming. Never overwrite an existing profile." |
 | P6 | "Implement P6: golden CSV comparison, safety tests, packaging, and documentation. Produce the release checklist." |
 
@@ -111,11 +113,11 @@ Use this list during review. Every item must be confirmed by a test or a code re
 
 ### 5.1. CLI and validation
 
-- [ ] 41 parameters, exact names, aliases, defaults, and ranges.
+- [ ] 42 parameters, exact names, aliases, defaults, and ranges.
 - [ ] `-PortFilter` alias for `-PortMode`.
 - [ ] Final-fallback confirmation when a 443-only list conflicts with `-PortMode Non443`.
 - [ ] `-Help` before the Administrator check.
-- [ ] `V1`–`V10` in the documented order, with the documented messages.
+- [ ] `V1`–`V12` in the documented order, with the documented messages.
 - [ ] Mode precedence: Help → validation → environment → ListExisting → Verify/Prune → normal.
 - [ ] `-ListExisting` and `-ListOnly` still pass the environment checks.
 
@@ -143,10 +145,14 @@ Use this list during review. Every item must be confirmed by a test or a code re
 - [ ] Inventory both phonebooks; detect name collisions and split tunneling.
 - [ ] Skip non-SSTP profiles with `NOT_SSTP_SKIPPED`.
 - [ ] Multi-attempt TCP, stored-credential dial, fallback credentials, and transient retries.
-- [ ] `ACCEPT` → `KEEP`, `REJECT` → `DELETE`, `INCONCLUSIVE` → `KEEP`.
+- [ ] `ACCEPT` → `KEEP` (or `REMOVE_BY_CHOICE` only when `-KeepBestExisting` selected it), `REJECT` → `DELETE`, `INCONCLUSIVE` → `KEEP`.
 - [ ] `-ReportOnly` never deletes.
 - [ ] Only exact uppercase `YES` deletes.
 - [ ] Remove only the tested scope; verify removal afterward.
+- [ ] `-KeepBestExisting` ranks only `ACCEPT` records with a real `DownloadMbps`; tie-break by latency ascending (null last), then name.
+- [ ] `ALL`, empty input, and `TOP N` with `N >= ranked count` keep every working profile.
+- [ ] `INCONCLUSIVE`, `SKIPPED`, non-SSTP, and no-speed profiles are never offered for removal.
+- [ ] Retention is disabled after an uncertain-RAS pause; only rejected profiles remain removable.
 
 ### 5.5. Safety and privacy
 
@@ -170,9 +176,11 @@ A port is ready for review only when all of the following are true:
 5. The safety tests pass:
    - `-VerifyExisting -ReportOnly` makes no changes.
    - Enter, `yes`, `Yes`, and `Y` keep every profile.
-   - Exact `YES` removes only rejected profiles in the tested scope.
+   - Exact `YES` removes only rejected profiles and explicitly not-retained working profiles in the tested scope.
    - `INCONCLUSIVE` is always kept.
    - A partial download with real bytes is accepted.
+   - `TOP N` never selects `INCONCLUSIVE`, `SKIPPED`, non-SSTP, or no-speed profiles.
+   - Declining the final confirmation leaves every removal candidate in place.
 6. `-Help` works without elevation.
 7. Packaging and usage instructions are complete.
 8. Known differences are documented; there are no silent differences.
@@ -183,9 +191,10 @@ A port is ready for review only when all of the following are true:
 
 | Mistake | Why it is wrong |
 |---|---|
-| Requiring a complete download | Violates the v16.1.2 rule: real partial bytes are accepted. |
+| Requiring a complete download | Violates the v16.2.0 rule: real partial bytes are accepted. |
 | Translating status strings or CSV headers | Breaks compatibility and golden tests. |
 | Treating `INCONCLUSIVE` as removable | Violates the safety contract. |
+| Removing a no-speed working profile with `TOP N` | Only `ACCEPT` records with a real `DownloadMbps` are rankable. |
 | Accepting `yes`, `Yes`, or `Y` for deletion | Only exact uppercase `YES` is allowed. |
 | Deleting from the other phonebook scope | The tested scope is the only valid scope. |
 | Running VPN dials in parallel | Corrupts public-IP and RAS results. |
@@ -205,8 +214,8 @@ If you want a short start instead of the full prompt, send this first:
 Read docs/SPECIFICATION.md, docs/PORTING.md, docs/TESTING.md, and
 Test-FreeSstpServers_v16_1.ps1 completely. Then propose a project structure
 and a P0 test plan for a <TARGET_LANGUAGE> port. Do not write production code
-yet. Treat the specification as normative and preserve all 41 parameters,
-V1-V10, status strings, CSV schemas, and safety rules.
+yet. Treat the specification as normative and preserve all 42 parameters,
+V1-V12, status strings, CSV schemas, and safety rules.
 ```
 
 After the assistant responds, send the full prompt in [Section 3](#3-copy-paste-prompt) with your choices filled in.
@@ -222,9 +231,9 @@ After the assistant responds, send the full prompt in [Section 3](#3-copy-paste-
 - [ ] CSV header comparison is automated.
 - [ ] Safety tests are automated or documented as manual VM tests.
 - [ ] Known differences are listed in the port's README.
-- [ ] The port's documentation states that it is based on v16.1.2 behavior.
+- [ ] The port's documentation states that it is based on v16.2.0 behavior.
 - [ ] The port does not claim to be an official release unless the maintainer says so.
 
 ---
 
-*This prompt is a tool for implementers. It does not grant permission to change the v16.1.2 behavior contract.*
+*This prompt is a tool for implementers. It does not grant permission to change the v16.2.0 behavior contract.*

@@ -18,17 +18,18 @@ Windows VPN profiles, so correctness and safety matter more than feature count.
 The following are part of the public behavior contract:
 
 - Parameter names, aliases, defaults, and ranges.
-- Validation messages and their order (`V1` through `V10`).
-- Status strings, verdicts, planned actions, and action-taken values.
+- Validation messages and their order (`V1` through `V12`).
+- Status strings, verdicts, planned actions (`KEEP`, `DELETE`, `REMOVE_BY_CHOICE`), and action-taken values.
 - CSV file names, column names, and column order.
 - New profile naming (`<country> - <host>`, plus `-p<port>` for non-443 endpoints).
 - The final-fallback port confirmation when a port-443-only list conflicts with `-PortMode Non443`.
 - The `YES` confirmation rule for deletion.
 - `INCONCLUSIVE` always mapping to `KEEP`.
+- Speed-ranked retention rules: only `ACCEPT` records with a real `DownloadMbps` are rankable; no-speed, `INCONCLUSIVE`, `SKIPPED`, and non-SSTP records are always kept.
 - One VPN connection at a time.
 
 A pull request that changes any of these needs an explicit compatibility
-discussion in an issue first. Improvements that do not preserve v16.1.2 behavior
+discussion in an issue first. Improvements that do not preserve v16.2.0 behavior
 belong in a future major version.
 
 ## Development setup

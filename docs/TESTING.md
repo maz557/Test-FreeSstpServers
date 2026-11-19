@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.1.2` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.2.0` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -39,9 +39,11 @@ Never run destructive tests on a production workstation. Use a VM snapshot for s
 | `CsvLoader` | Full columns, empty `Source`, textual `PingMs`, port mismatch, invalid port, empty row, empty file. |
 | `Merger` | Lower PING wins, null PING, filling `Country`/`Uptime`, ordering. |
 | `Scorer` | Fixed vectors, single server, all equal, null values, clamping. |
-| `Validator` | `V1`–`V10`, message order. |
+| `Validator` | `V1`–`V12`, message order. |
 | `CsvWriter` | Column order, null, bool, quoting, CRLF, invariant culture. |
 | `StatusMachine` | All transitions in Section 8 of the specification. |
+| `RetentionRanking` | Speed descending; latency ascending with null last; name tie-break; no-speed records unranked. |
+| `RetentionSelection` | Empty/`ALL`; `TOP N`; case-insensitive; extra spaces; `TOP 0`; `TOP -1`; `TOP`; non-numeric; `N >= rankedCount`. |
 
 ### 2.1. Scorer test vector
 
@@ -125,6 +127,12 @@ Scenarios:
 | Existing no internet + same IP | Probe false | Balanced rejects / Conservative keeps |
 | Existing post-test disconnect failure | Disconnect false | `PostTestDisconnectFailed=true`, `INCONCLUSIVE` |
 | Existing duplicate name across phonebooks | Same name in both | Kept and skipped |
+| Speed-ranked TOP N | 4 ACCEPT records with speeds 30/20/10/5 | Keep N fastest; rest `PlannedAction=REMOVE_BY_CHOICE` |
+| Speed-ranked tie | Equal speed, different latency | Lower latency ranks first; null latency last |
+| Speed-ranked no-speed ACCEPT | `DownloadMbps=null` | Kept automatically; never `REMOVE_BY_CHOICE` |
+| Speed-ranked INCONCLUSIVE | `Verdict=INCONCLUSIVE` | Always `KEEP`; never `REMOVE_BY_CHOICE` |
+| Speed-ranked paused run | `stopFurtherChecks=true` | Retention disabled; only rejected profiles can be removed |
+| Speed-ranked decline | `TOP N` then Enter at final prompt | All candidates `NOT_REMOVED_BY_USER_CHOICE`; no deletion |
 
 ---
 
@@ -160,6 +168,13 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I24 | Temporary profile left behind | `RAS_CLEANUP_INCOMPLETE` and stop |
 | I25 | Slow server with a partial download | `WORKING_TUNNEL_AND_INTERNET` with `DownloadComplete=False` |
 | I26 | `-FinalFallbackOnly -PortMode Non443 -ListOnly` | 443-only fallback → prompt; `Q` stops, `Y` continues with effective `All` |
+| I27 | `-VerifyExisting -KeepBestExisting` + `ALL` | No working profile is removed; rejected profiles still require `YES` |
+| I28 | `-VerifyExisting -KeepBestExisting` + `TOP 1` + Enter | Ranked table shown; not-retained working profiles show `REMOVE_BY_CHOICE` and `NOT_REMOVED_BY_USER_CHOICE`; no deletion |
+| I29 | `-VerifyExisting -KeepBestExisting` + `TOP 1` + `YES` | Fastest working profile kept; other working profiles removed; rejected profiles removed; CSV remains 45 columns |
+| I30 | `-VerifyExisting -KeepBestExisting` with a no-speed ACCEPT profile | No-speed profile is kept automatically and is not offered for removal |
+| I31 | `-VerifyExisting -KeepBestExisting` after a RAS pause | Retention is disabled; only already-rejected profiles are offered for removal |
+| I32 | `-KeepBestExisting -ReportOnly` | Validation V12 error; no test starts |
+| I33 | `-KeepBestExisting` without `-VerifyExisting` | Validation V11 error; no test starts |
 
 > **Important:** I25 encodes the v16.1.1 partial-download rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
@@ -225,7 +240,7 @@ The exact column names and order are listed in Section 9 of [SPECIFICATION.md](S
 ## 8. Acceptance criteria
 
 - [ ] All parameters and defaults from the specification are implemented.
-- [ ] All `V1`–`V10` validations run with the same messages.
+- [ ] All `V1`–`V12` validations run with the same messages.
 - [ ] `-Help` works without Administrator rights.
 - [ ] `-ListExisting` makes no changes.
 - [ ] `-VerifyExisting -ReportOnly` never deletes.
@@ -234,6 +249,9 @@ The exact column names and order are listed in Section 9 of [SPECIFICATION.md](S
 - [ ] All CSVs have the exact columns and column order.
 - [ ] `DownloadComplete=False` does not prevent acceptance.
 - [ ] `INCONCLUSIVE` always maps to `KEEP`.
+- [ ] `-KeepBestExisting` ranks only ACCEPT records with a real `DownloadMbps`; no-speed, INCONCLUSIVE, SKIPPED, and non-SSTP records are always kept.
+- [ ] `PlannedAction=REMOVE_BY_CHOICE` appears only on ACCEPT records selected by `TOP N`.
+- [ ] Declining the final `YES` leaves every removal candidate in place.
 - [ ] `PostTestDisconnectFailed` stops checks and keeps the profile.
 - [ ] RAS 633, 638, and network timeouts are distinguished correctly.
 - [ ] Only one VPN is tested at a time.
@@ -257,7 +275,7 @@ Use this checklist when reviewing a port. Mark the port column only after a test
 | 2 | Defaults | Yes | | |
 | 3 | `ValidateRange` bounds | Yes | | |
 | 4 | `PortFilter` alias | Yes | | |
-| 5 | `V1`–`V10` | Yes | | |
+| 5 | `V1`–`V12` | Yes | | |
 | 6 | Mode precedence | Yes | | |
 | 7 | Help without Administrator | Yes | | |
 | 8 | Environment checks | Yes | | |
@@ -299,6 +317,9 @@ Use this checklist when reviewing a port. Mark the port column only after a test
 | 44 | Snapshot header (8) | Yes | | |
 | 45 | Key messages | Yes | | |
 | 46 | Final-fallback port confirmation | Yes | | |
+| 47 | Speed-ranked retention (`ALL`/`TOP N`) | Yes | | |
+| 48 | `REMOVE_BY_CHOICE` safety exclusions | Yes | | |
+| 49 | Retention final confirmation | Yes | | |
 
 ---
 
@@ -315,6 +336,9 @@ Run these in order on a test machine. Stop at the first failure.
 
 # 3. Verify without deletion.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -ReportOnly
+
+# 3b. Speed-ranked retention preview: choose TOP 1, then press Enter at the final prompt.
+.\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 
 # 4. Small new-server run with no profile installation.
 .\Test-FreeSstpServers_v16_1.ps1 -MaxServers 1 -AddBestVpnCount 0 -SpeedSamples 1
