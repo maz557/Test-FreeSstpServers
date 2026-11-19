@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.2.1] - 2026-11-19
+
+### Fixed
+
+- Existing-profile verification now retries the dial once with the configured
+  `-Username`/`-Password` when Windows returns RAS 645 (`internal
+  authentication error`) on the stored credentials. Previously only 691/649
+  triggered the fallback, so profiles without usable saved credentials ended
+  as `VPN_CONNECT_FAILED` / `INCONCLUSIVE` and no download-speed sample was
+  measured.
+- If both credential sources fail with 645, the profile is still kept as
+  `INCONCLUSIVE` and the report states that both sources were tried.
+
+### Compatibility
+
+- No new parameters; the script still has 42 parameters with the same names,
+  aliases, defaults, and ranges.
+- CSV schemas are unchanged: 43 / 45 / 8 / 7 columns.
+- Status strings, ranking formulas, profile naming, duplicate detection, and
+  deletion safety rules are unchanged.
+
 ## [16.2.0] - 2026-11-19
 
 ### Added
@@ -122,6 +143,7 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.2.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.1
 [16.2.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.0
 [16.1.2]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.2
 [16.1.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.1

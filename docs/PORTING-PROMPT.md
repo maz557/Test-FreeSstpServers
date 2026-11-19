@@ -1,6 +1,6 @@
 # AI Porting Prompt
 
-> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.2.0` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.2.0, not merely compile.
+> **Purpose.** This file is a ready-to-use brief for an AI coding assistant that will reimplement `Test-FreeSstpServers v16.2.1` in another programming language. It does not replace the normative specification; it tells the assistant how to read and apply it. The result must behave like v16.2.1, not merely compile.
 
 ---
 
@@ -21,9 +21,10 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 - The tool is **Windows-only** because it uses `VpnClient`, `rasdial.exe`, the RAS phonebook, and Windows public-IP behavior. A non-Windows port can reuse the parsers, scorer, CSV writer, and CLI, but cannot provide the VPN workflows without a Windows host or a Windows VM.
 - `docs/SPECIFICATION.md` is the **normative contract**. If the reference script and the specification ever disagree, stop and report the conflict; do not guess.
 - The reference script is **behavior to match**, not code to translate line by line. A port may use different modules, classes, or idioms.
-- The published v16.2.0 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
+- The published v16.2.1 engine accepts a download sample when curl receives **real bytes over HTTP 2xx**, even if the full requested transfer is cut short. `DownloadComplete=False` must not reject the server.
 - Existing-profile deletion is a destructive operation. It requires an exact uppercase `YES`, and `-ReportOnly` must never delete.
 - With `-VerifyExisting -KeepBestExisting`, only `ACCEPT` profiles with a real `DownloadMbps` value are ranked. `INCONCLUSIVE`, `SKIPPED`, non-SSTP, and no-speed profiles are always kept, even when the operator chooses `TOP N`.
+- Existing-profile dialing tries the stored Windows credentials first. On RAS 645/691/649 it retries once with the configured `Username`/`Password`; RAS 645 is an internal authentication error and must not end the test while a fallback is still possible.
 - When the final fallback source is the only source and all of its entries use port 443, the script asks before overriding `-PortMode Non443` to `All`. Declining must stop without testing anything.
 
 ---
@@ -31,7 +32,7 @@ The prompt assumes the assistant can read the repository. If your tool cannot re
 ## 3. Copy-paste prompt
 
 ```text
-You are implementing a behavior-compatible port of Test-FreeSstpServers v16.2.0.
+You are implementing a behavior-compatible port of Test-FreeSstpServers v16.2.1.
 
 Target language: <TARGET_LANGUAGE>
 Target runtime and OS: <TARGET_RUNTIME_AND_OS>
@@ -191,7 +192,7 @@ A port is ready for review only when all of the following are true:
 
 | Mistake | Why it is wrong |
 |---|---|
-| Requiring a complete download | Violates the v16.2.0 rule: real partial bytes are accepted. |
+| Requiring a complete download | Violates the v16 rule: real partial bytes are accepted. |
 | Translating status strings or CSV headers | Breaks compatibility and golden tests. |
 | Treating `INCONCLUSIVE` as removable | Violates the safety contract. |
 | Removing a no-speed working profile with `TOP N` | Only `ACCEPT` records with a real `DownloadMbps` are rankable. |
@@ -231,9 +232,9 @@ After the assistant responds, send the full prompt in [Section 3](#3-copy-paste-
 - [ ] CSV header comparison is automated.
 - [ ] Safety tests are automated or documented as manual VM tests.
 - [ ] Known differences are listed in the port's README.
-- [ ] The port's documentation states that it is based on v16.2.0 behavior.
+- [ ] The port's documentation states that it is based on v16.2.1 behavior.
 - [ ] The port does not claim to be an official release unless the maintainer says so.
 
 ---
 
-*This prompt is a tool for implementers. It does not grant permission to change the v16.2.0 behavior contract.*
+*This prompt is a tool for implementers. It does not grant permission to change the v16.2.1 behavior contract.*

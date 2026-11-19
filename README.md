@@ -1,10 +1,10 @@
-# Test-FreeSstpServers v16.2.0
+# Test-FreeSstpServers v16.2.1
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-Version 16.2.0 adds optional speed-ranked retention for existing profiles: after testing, keep every working profile or only the fastest N. Nothing is removed without the final exact uppercase `YES`, and `-ReportOnly` still never deletes. All other v16.1.2 behavior is unchanged unless `-KeepBestExisting` is used.
+Version 16.2.1 adds a credential fallback for existing profiles: when Windows reports RAS 645 because a saved profile has no usable stored credentials, the tester retries once with the configured username and password, so the route, latency, and download-speed tests can still run. It also includes the v16.2.0 speed-ranked retention: after testing, keep every working profile or only the fastest N. Nothing is removed without the final exact uppercase `YES`, and `-ReportOnly` still never deletes. All other v16.2.0 behavior is unchanged.
 
 ---
 
@@ -40,6 +40,7 @@ Version 16.2.0 adds optional speed-ranked retention for existing profiles: after
 - Adds the top N confirmed servers to Windows as SSTP profiles named `<country> - <server host>` (non-443 endpoints keep a `-p<port>` suffix) and stores the username/password in the RAS phonebook.
 - Inventories existing per-user and AllUser VPN profiles, including duplicate-name and split-tunneling detection.
 - Tests existing SSTP profiles with the same route, latency, and speed measurements, then produces an `ACCEPT` / `REJECT` / `INCONCLUSIVE` verdict.
+- Retries an existing-profile dial once with the configured username and password when Windows returns RAS 645/691/649 on the stored credentials, instead of ending the test before the speed measurement.
 - With `-VerifyExisting -KeepBestExisting`, ranks working profiles by measured download speed and lets you keep all of them or only the fastest N. Profiles without a usable speed sample, `INCONCLUSIVE` profiles, and skipped profiles are always kept.
 - Removes rejected existing profiles, and any working profiles you explicitly choose not to retain, only after a summary table and an explicit uppercase `YES`; `-ReportOnly` never removes anything.
 - Writes machine-readable CSV reports for every phase.

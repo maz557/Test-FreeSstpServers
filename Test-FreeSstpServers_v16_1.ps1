@@ -1,3 +1,9 @@
+# v16.2.1: v16.2.0 + a credential fallback for RAS 645 on existing profiles.
+#      - Windows can return RAS 645 ("internal authentication error") when a
+#        saved profile has no usable stored credentials. The tester now retries
+#        immediately with the configured -Username/-Password on 645, just as it
+#        already did for 691/649, so the route, latency, and download tests can
+#        run instead of ending as VPN_CONNECT_FAILED.
 # v16.2.0: v16.1.2 + optional speed-ranked retention for existing profiles.
 #      - New -KeepBestExisting switch (used by Run-v16_1-APPLY-REMOVALS.cmd):
 #        after verification, working profiles are ranked by measured download
@@ -300,6 +306,9 @@
     test. Accepted profiles are kept untouched. Rejected profiles are removed
     only after a summary table and an explicit YES confirmation. After the
     verification, the script exits without fetching a server list.
+    The dial tries the stored Windows credentials first and retries once with
+    -Username/-Password on RAS 645/691/649, so a missing saved credential does
+    not skip the route, latency, and download tests.
     Combine with -ReportOnly for a dry run.
 
 .PARAMETER KeepBestExisting
@@ -437,7 +446,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.2.0
+    Version  : v16.2.1
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -1912,7 +1921,7 @@ function Get-RasErrorCode {
     param([string]$Text, [int]$ProcessExitCode)
     $match = [regex]::Match([string]$Text, '(?i)Remote Access error\s+(\d{3})')
     if ($match.Success) { return [int]$match.Groups[1].Value }
-    if ($ProcessExitCode -in @(633, 638, 691, 720, 809, 810)) { return $ProcessExitCode }
+    if ($ProcessExitCode -in @(633, 638, 645, 691, 720, 809, 810)) { return $ProcessExitCode }
     return 0
 }
 
@@ -2565,7 +2574,7 @@ function Test-ExistingSstpProfile {
             }
         }
 
-        # Real SSTP dial. Stored Windows credentials first; on RAS 691/649
+        # Real SSTP dial. Stored Windows credentials first; on RAS 645/691/649
         # retry with -Username/-Password. Remote terminations (619/628/629/631)
         # get a delayed retry because SoftEther/VPN Gate servers often refuse an
         # immediate reconnect or mask a credential refusal as 628.
@@ -2595,10 +2604,10 @@ function Test-ExistingSstpProfile {
             $attemptLog.Add(("attempt {0} ({1}): {2}" -f $dialAttempts, $credentialSource, $attemptDetail))
             $parsedRasCode = Get-RasErrorCode -Text $dialText -ProcessExitCode ([int]$dial.ExitCode)
 
-            if (-not $usingFallbackCredentials -and $parsedRasCode -in @(691, 649)) {
-                $credentialSource = 'Fallback vpn/vpn (RAS 691/649 on the stored credentials)'
+            if (-not $usingFallbackCredentials -and $parsedRasCode -in @(645, 691, 649)) {
+                $credentialSource = 'Fallback vpn/vpn (RAS 645/691/649 on the stored credentials)'
                 $usingFallbackCredentials = $true
-                Write-Host '  stored credentials were refused (RAS 691/649); retrying once with the configured -Username/-Password' -ForegroundColor Yellow
+                Write-Host '  stored credentials were unusable (RAS 645/691/649); retrying once with the configured -Username/-Password' -ForegroundColor Yellow
                 continue
             }
             if ($parsedRasCode -eq 633 -and $dialAttempts -le $Ras633Retries) {
@@ -2707,7 +2716,11 @@ function Test-ExistingSstpProfile {
                 $record.Verdict = 'INCONCLUSIVE'
                 $record.PlannedAction = 'KEEP'
                 $record.ActionTaken = 'KEPT'
-                $record.Error = (([string]$record.Error + ' A failed RAS dial may reflect credentials, transient network state, or Windows RAS; the existing profile was kept.').Trim())
+                if ($rasCode -eq 645) {
+                    $record.Error = (([string]$record.Error + ' RAS 645 is an internal authentication error; the stored and configured credentials were both tried. The existing profile was kept.').Trim())
+                } else {
+                    $record.Error = (([string]$record.Error + ' A failed RAS dial may reflect credentials, transient network state, or Windows RAS; the existing profile was kept.').Trim())
+                }
                 Write-Host ("  VPN dial failed (process exit {0}; parsed RAS code {1}): {2}" -f $dial.ExitCode, $rasCode, $detail) -ForegroundColor DarkYellow
             }
 

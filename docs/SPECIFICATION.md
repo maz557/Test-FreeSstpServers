@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.2.0 - Reimplementation Specification
+# Test-FreeSstpServers v16.2.1 - Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -9,19 +9,19 @@
 | Item | Value |
 |---|---|
 | Document ID | `PRJ-SSTP-V162-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.2.0` |
-| Document version | `1.3` |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.2.1` |
+| Document version | `1.4` |
 | Date | 2026-11-19 |
-| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, and v16.2.0 speed-ranked retention |
+| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, v16.2.0 speed-ranked retention, and the v16.2.1 RAS 645 credential fallback |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,490 lines, 223,050 bytes |
+| Reference size | 4,503 lines, 224,023 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1; v16.2.1 adds an immediate credential fallback for RAS 645 in Section 7.8.
 
 ### Normative language
 
@@ -329,7 +329,7 @@ Detect name collision / split tunneling / unparseable address
         ▼
 TCP probe (multiple attempts) → dial with stored credentials
         │
-        ├─ 691/649 → retry with Username/Password
+        ├─ 645/691/649 → retry with Username/Password
         ├─ 633 → disconnect + retry
         ├─ 619/628/629/631 → delayed retry (maximum 2)
         ▼
@@ -1248,7 +1248,7 @@ After the loop:
 (?i)Remote Access error\s+(\d{3})
 ```
 
-If the regex does not match and `ProcessExitCode` is one of `633, 638, 691, 720, 809, 810`, return that code; otherwise return `0`.
+If the regex does not match and `ProcessExitCode` is one of `633, 638, 645, 691, 720, 809, 810`, return that code; otherwise return `0`.
 
 ### 6.8. Route verification after connection
 
@@ -1692,8 +1692,8 @@ do:
     rasCode = Get-RasErrorCode(text, dial.ExitCode)
 
     # 1) credential fallback
-    if not usingFallbackCredentials and rasCode in [691, 649]:
-        credentialSource = "Fallback vpn/vpn (RAS 691/649 on the stored credentials)"
+    if not usingFallbackCredentials and rasCode in [645, 691, 649]:
+        credentialSource = "Fallback vpn/vpn (RAS 645/691/649 on the stored credentials)"
         usingFallbackCredentials = true
         continue
 
@@ -1723,7 +1723,7 @@ Exact rules:
 
 - The first dial uses only the profile name so Windows can use its stored credentials.
 - In fallback, `Username`/`Password` are passed explicitly.
-- If 691/649 occurs on stored credentials, fallback happens **immediately**, with no delay.
+- If 645/691/649 occurs on stored credentials, fallback happens **immediately**, with no delay. RAS 645 is Windows' internal authentication error; on public VPN Gate profiles it commonly means the saved profile has no usable stored credentials, not that the endpoint is down.
 - 633 is retried up to `Ras633Retries`; before each retry, disconnect and wait `RasRecoveryDelaySec`.
 - 619/628/629/631 are retried at most twice; on the second retry with stored credentials, switch to fallback.
 - The loop cap is `Ras633Retries + 4` so a combination of 633 and transient errors cannot run away.
@@ -1743,6 +1743,8 @@ After the loop:
 | exit != 0 and `rasCode in [619,628,629,631]` | `VPN_CONNECT_REMOTE_TERMINATED` | Balanced: `REJECT / DELETE`; Conservative: `INCONCLUSIVE / KEEP / KEPT` |
 | exit != 0 and (`rasCode=638` or exit=`-2147014836` or regex timeout) | `VPN_CONNECT_TIMEOUT` | Balanced: `REJECT / DELETE`; Conservative: `INCONCLUSIVE / KEEP / KEPT` |
 | Any other error | `VPN_CONNECT_FAILED` | `INCONCLUSIVE / KEEP / KEPT` |
+
+RAS 645 is retried once with the configured credentials like 691/649. If it persists, it is reported as `VPN_CONNECT_FAILED` with a message stating that both credential sources were tried; the profile is kept.
 
 **Final `Error`:** when `attemptLog` is non-empty, it is built as `attempt 1 (...): ... | attempt 2 (...): ... | FINAL: <detail>` and limited to 1,200 characters. An explanatory message is then appended for some statuses, and the whole error is limited to 1,400 characters.
 
@@ -2632,7 +2634,7 @@ When RAS 633 remains after the allowed retries, the script runs `Show-Ras633Diag
 | Source error | Blocked site, invalid HTML, empty CSV | Fallback; ultimately `throw` with guidance. |
 | TCP error | Refused, timeout, DNS | `TCP_UNREACHABLE`, or continue with the switch. |
 | Profile error | Wrong address stored | `PROFILE_PORT_MISMATCH`. |
-| Dial error | 633/638/691/628/timeout | Corresponding status. |
+| Dial error | 633/638/645/691/628/timeout | Corresponding status. |
 | Route error | IP unchanged or unknown | Corresponding status. |
 | Download error | HTTP error, timeout, zero bytes | `CONNECTED_NO_DOWNLOAD` (new flow) or connectivity probe (existing flow). |
 | Cleanup error | Profile remained connected | `RAS_CLEANUP_INCOMPLETE` and stop. |
@@ -2737,6 +2739,7 @@ The script uses `Write-Host`, `Write-Warning`, `Write-Progress`, and colors. A p
 | RAS 633 | Keep/stop | Keep | Keep |
 | RAS 638 | Reject (`SSTP_RAS_TIMEOUT_638`) | Reject | Keep |
 | RAS 691/649 | Reject (`VPN_CONNECT_FAILED`) | Keep | Keep |
+| RAS 645 after both credential sources | Reject (`VPN_CONNECT_FAILED`) | Keep | Keep |
 | RAS 619/628/629/631 | Reject (`VPN_CONNECT_FAILED`) | Reject | Keep |
 | Network timeout | Reject | Reject | Keep |
 | Connected + IP unchanged | Reject | Reject | Reject |
@@ -2917,6 +2920,7 @@ All default outputs are written next to the script (or executable). Parent direc
 | **RAS** | Windows Remote Access Service, the subsystem behind `rasdial` and the `VpnClient` module. |
 | **RAS 633** | A local Windows error indicating that no remote-access port could be allocated; not proof of server rejection. |
 | **RAS 638** | A timeout reported by the RAS/SSTP layer. |
+| **RAS 645** | Windows internal authentication error; often means a saved profile has no usable stored credentials. Retried once with the configured credentials. |
 | **RAS 691/649** | Authentication rejection (bad credentials or account state). |
 | **RAS 619/628/629/631** | Remote termination or link-failure family treated as a transient remote failure. |
 | **Shortlist** | The sorted and filtered set of servers that will actually be tested. |

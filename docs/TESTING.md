@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.2.0` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.2.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -108,6 +108,7 @@ Scenarios:
 | TCP timeout with switch | `Error="TCP timeout"` | Dial is attempted |
 | TCP timeout without switch | `Error="TCP timeout"` | `TCP_UNREACHABLE` |
 | Profile port mismatch | Store returns a different port | `PROFILE_PORT_MISMATCH`; no dial |
+| RAS code without matching text | Exit 645, text has no `Remote Access error` | `Get-RasErrorCode` returns 645 |
 | Dial 633 once, then success | Sequence | Retry, then connect |
 | Dial 633 repeatedly | Always 633 | `LOCAL_RAS_ERROR_633_AFTER_RETRY` and stop |
 | Recovery disconnect timeout | `TimedOut` | `RAS_RECOVERY_TIMEOUT_STATE_UNCERTAIN` |
@@ -123,6 +124,8 @@ Scenarios:
 | Existing duplicate name | Collision | `DUPLICATE_NAME_ACROSS_PHONEBOOKS` |
 | Existing split tunneling | True | `SPLIT_TUNNELING_PROFILE_SKIPPED` |
 | Existing 691 twice | Sequence | `CREDENTIALS_REJECTED` |
+| Existing 645 then success | Sequence | Fallback with configured credentials; connect and measure download |
+| Existing 645 twice | Sequence | `VPN_CONNECT_FAILED`; profile kept |
 | Existing 628 twice | Sequence | Fallback, then `VPN_CONNECT_REMOTE_TERMINATED` |
 | Existing no internet + same IP | Probe false | Balanced rejects / Conservative keeps |
 | Existing post-test disconnect failure | Disconnect false | `PostTestDisconnectFailed=true`, `INCONCLUSIVE` |
@@ -175,6 +178,8 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I31 | `-VerifyExisting -KeepBestExisting` after a RAS pause | Retention is disabled; only already-rejected profiles are offered for removal |
 | I32 | `-KeepBestExisting -ReportOnly` | Validation V12 error; no test starts |
 | I33 | `-KeepBestExisting` without `-VerifyExisting` | Validation V11 error; no test starts |
+| I34 | Existing profile returns RAS 645 for the stored credentials | One immediate fallback with `-Username`/`-Password`; if it connects, route/latency/download tests run and the profile is not `VPN_CONNECT_FAILED` |
+| I35 | Existing profile returns RAS 645 for both credential sources | `VPN_CONNECT_FAILED` / `INCONCLUSIVE`; profile kept; error states that both sources were tried |
 
 > **Important:** I25 encodes the v16.1.1 partial-download rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
