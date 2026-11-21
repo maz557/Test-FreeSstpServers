@@ -1,6 +1,6 @@
 # Porting Guide
 
-> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.2.1` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
+> **Purpose.** This guide describes how to reimplement `Test-FreeSstpServers v16.3.0` in another language without breaking behavioral parity. The normative contract is [SPECIFICATION.md](SPECIFICATION.md); this document covers language choices, architecture, Windows API mapping, migration phases, and risks.
 
 > **AI-assisted porting.** If you want an AI coding assistant to generate the port, use [PORTING-PROMPT.md](PORTING-PROMPT.md). It contains a copy-paste brief, phase prompts, and a definition-of-done checklist.
 
@@ -15,7 +15,7 @@ A port is successful when the observable behavior matches the reference script:
 - the same CSV file names, columns, column order, and serialization;
 - the same safety rules, including exact-`YES` deletion and `-ReportOnly` behavior;
 - the same final-fallback port confirmation when a port-443-only list conflicts with `-PortMode Non443`;
-- the same speed-ranked retention behavior (`ALL` / `TOP N`) and the same `REMOVE_BY_CHOICE` exclusion rules;
+- the same speed-ranked retention behavior (`ALL` / `TOP N`, default `TOP 3`) and the same `REMOVE_BY_CHOICE` exclusion rules;
 - the same existing-profile credential fallback on RAS 645/691/649;
 - the same ranking and top-N selection.
 
@@ -160,7 +160,7 @@ Suggested mapping:
 | `P1` | CLI, validation, modes, console reporting | `-Help` and `-ListExisting` work |
 | `P2` | TCP, temporary profile, `rasdial`, cleanup | One real server tested |
 | `P3` | Route, latency, download, statuses, ranking | Full new-server run works |
-| `P4` | Existing-profile phase, controlled removal, and speed-ranked retention | `-VerifyExisting -ReportOnly`, apply, and `-KeepBestExisting` work |
+| `P4` | Existing-profile phase, controlled removal, and speed-ranked retention | `-VerifyExisting -ReportOnly`, apply, and `-KeepBestExisting` work, including the default `TOP 3` selection |
 | `P5` | Top N, country + host naming, credential storage, duplicate detection | Profiles are added correctly |
 | `P6` | Parity testing, packaging, documentation | Release candidate |
 
@@ -182,6 +182,7 @@ A realistic estimate for one full-time developer with a Windows VM is 6–9 week
 | Clipboard unavailable | Fall back to an HTML file |
 | Partial downloads rejected by mistake | Keep the v16 rule: real bytes are enough; `DownloadComplete=False` does not prevent acceptance |
 | RAS 645 treated as a dead endpoint | Retry once with the configured credentials; report `VPN_CONNECT_FAILED` only after both credential sources fail |
+| Retention default assumed to be `ALL` | The v16.3.0 default is `TOP 3`; only an explicit `ALL` keeps every working profile |
 | Working profiles removed by a ranking bug | Rank only ACCEPT records with `DownloadMbps != null`; keep INCONCLUSIVE, SKIPPED, and no-speed records; require the final exact `YES` |
 
 ---

@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.3.0] - 2026-11-21
+
+### Changed
+
+- `-KeepBestExisting` now treats `TOP 3` as the default retention selection.
+  Pressing Enter at the retention prompt keeps the three fastest working
+  profiles; type `ALL` to keep every working profile or `TOP N` for a
+  different count.
+- The final removal plan still requires the exact uppercase `YES`. Pressing
+  Enter at that prompt keeps every candidate, so the default selection never
+  deletes anything by itself.
+- If fewer than three profiles are rankable, the default behaves as `ALL`.
+
+### Compatibility
+
+- No new parameters; the script still has 42 parameters with the same names,
+  aliases, defaults, and ranges.
+- CSV schemas are unchanged: 43 / 45 / 8 / 7 columns.
+- Status strings, ranking formulas, profile naming, duplicate detection, and
+  deletion safety rules are unchanged.
+- Without `-KeepBestExisting`, existing-profile behavior is unchanged.
+- The default selection is a deliberate behavior change: scripts that relied
+  on Enter meaning `ALL` must now type `ALL`.
+
 ## [16.2.1] - 2026-11-19
 
 ### Fixed
@@ -143,6 +167,7 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.3.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.3.0
 [16.2.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.1
 [16.2.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.0
 [16.1.2]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.1.2

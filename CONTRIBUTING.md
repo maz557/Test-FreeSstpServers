@@ -29,7 +29,7 @@ The following are part of the public behavior contract:
 - One VPN connection at a time.
 
 A pull request that changes any of these needs an explicit compatibility
-discussion in an issue first. Improvements that do not preserve v16.2.1 behavior
+discussion in an issue first. Improvements that do not preserve v16.3.0 behavior
 belong in a future major version.
 
 ## Development setup

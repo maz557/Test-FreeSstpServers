@@ -1,6 +1,6 @@
 @echo off
 rem Test existing SSTP profiles, rank working profiles by download speed, and
-rem keep all or only the fastest N.
+rem keep TOP 3 by default (ALL/TOP N available).
 rem Deletion happens only after the summary table and an explicit YES.
 
 net session >nul 2>&1

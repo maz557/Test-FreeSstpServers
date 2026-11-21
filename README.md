@@ -1,10 +1,10 @@
-# Test-FreeSstpServers v16.2.1
+# Test-FreeSstpServers v16.3.0
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-Version 16.2.1 adds a credential fallback for existing profiles: when Windows reports RAS 645 because a saved profile has no usable stored credentials, the tester retries once with the configured username and password, so the route, latency, and download-speed tests can still run. It also includes the v16.2.0 speed-ranked retention: after testing, keep every working profile or only the fastest N. Nothing is removed without the final exact uppercase `YES`, and `-ReportOnly` still never deletes. All other v16.2.0 behavior is unchanged.
+Version 16.3.0 makes `TOP 3` the default retention choice for existing profiles: after testing, press Enter to keep the three fastest working profiles, or type `ALL` / `TOP N`. The final removal plan still requires the exact uppercase `YES`, and pressing Enter there keeps everything. It also includes the v16.2.1 RAS 645 credential fallback and the v16.2.0 speed-ranked retention. All other v16.2.1 behavior is unchanged.
 
 ---
 
@@ -41,7 +41,7 @@ Version 16.2.1 adds a credential fallback for existing profiles: when Windows re
 - Inventories existing per-user and AllUser VPN profiles, including duplicate-name and split-tunneling detection.
 - Tests existing SSTP profiles with the same route, latency, and speed measurements, then produces an `ACCEPT` / `REJECT` / `INCONCLUSIVE` verdict.
 - Retries an existing-profile dial once with the configured username and password when Windows returns RAS 645/691/649 on the stored credentials, instead of ending the test before the speed measurement.
-- With `-VerifyExisting -KeepBestExisting`, ranks working profiles by measured download speed and lets you keep all of them or only the fastest N. Profiles without a usable speed sample, `INCONCLUSIVE` profiles, and skipped profiles are always kept.
+- With `-VerifyExisting -KeepBestExisting`, ranks working profiles by measured download speed; press Enter to keep the three fastest, or type `ALL` / `TOP N`. Profiles without a usable speed sample, `INCONCLUSIVE` profiles, and skipped profiles are always kept.
 - Removes rejected existing profiles, and any working profiles you explicitly choose not to retain, only after a summary table and an explicit uppercase `YES`; `-ReportOnly` never removes anything.
 - Writes machine-readable CSV reports for every phase.
 
@@ -91,7 +91,7 @@ The repository also includes double-click launchers that request elevation autom
 | `Run-Normal.cmd` | Clipboard list, `Non443`, 30 servers, add top 3 |
 | `Run-ListExisting.cmd` | Inventory only; no dial, no change |
 | `Run-ReportOnly.cmd` | Existing-profile test with `-ReportOnly` |
-| `Run-ApplyRemovals.cmd` | Existing-profile test with speed-ranked `ALL` / `TOP N` retention and controlled removal after `YES` |
+| `Run-ApplyRemovals.cmd` | Existing-profile test with speed-ranked `ALL` / `TOP N` retention (default `TOP 3`) and controlled removal after `YES` |
 
 ## Modes
 
@@ -101,7 +101,7 @@ The repository also includes double-click launchers that request elevation autom
 | Inventory | `-ListExisting` | Lists per-user and AllUser profiles; no dial | `sstp_existing_profiles_<ts>.csv` |
 | Verify dry-run | `-VerifyExisting -ReportOnly` | Tests existing SSTP profiles; never deletes | `sstp_existing_profile_check_<ts>.csv` |
 | Verify apply | `-VerifyExisting` | Tests, shows summary, asks for `YES`, removes rejected | CSV + removals |
-| Verify + best | `-VerifyExisting -KeepBestExisting` | Tests, ranks working profiles by speed, keeps `ALL` or `TOP N`, then asks for `YES` | CSV + removals |
+| Verify + best | `-VerifyExisting -KeepBestExisting` | Tests, ranks working profiles by speed, keeps `TOP 3` by default (`ALL` / `TOP N` available), then asks for `YES` | CSV + removals |
 | Prune + normal | `-PruneFirst` | Existing-profile phase, then the normal new-server run | Two CSVs |
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion, then normal run | Two CSVs |
 | List only | `-ListOnly` | Fetch, filter, sort, save snapshot, exit | `sstp_server_list_<ts>.csv` |
@@ -151,7 +151,7 @@ Every candidate is tested serially. Parallel VPN dials would make public-IP comp
 The tool changes Windows VPN configuration, so the following rules are non-negotiable:
 
 - **Explicit consent for deletion.** Existing profiles are removed only after the summary table and an exact uppercase `YES`. Pressing Enter, `yes`, `Yes`, or `Y` keeps every profile.
-- **Working-profile retention is explicit.** With `-KeepBestExisting`, only `ACCEPT` profiles with a real download-speed sample are ranked. `INCONCLUSIVE`, skipped, non-SSTP, and no-speed profiles are always kept. Removing a working profile requires choosing `TOP N` and then typing the final exact `YES`.
+- **Working-profile retention is explicit.** With `-KeepBestExisting`, only `ACCEPT` profiles with a real download-speed sample are ranked. `INCONCLUSIVE`, skipped, non-SSTP, and no-speed profiles are always kept. Removing a working profile requires selecting `TOP N` (or pressing Enter for the default `TOP 3`) and then typing the final exact `YES`.
 - **Report-only never deletes.** `-ReportOnly` is the recommended first maintenance run.
 - **Uncertain means keep.** Any `INCONCLUSIVE` verdict maps to `KEEP`. Local RAS errors, credential rejections, split tunneling, duplicate names, and unparseable addresses are never grounds for deletion.
 - **Scope fidelity.** A profile is removed only from the phonebook scope that was tested (`User` or `AllUser`). The tool never falls back to the other scope.
@@ -201,7 +201,7 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 # Existing-profile maintenance with the conservative removal policy.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -ExistingRemovalMode Conservative
 
-# Rank working profiles by measured speed, then keep ALL or only TOP N.
+# Rank working profiles by measured speed; press Enter for TOP 3 or type ALL/TOP N.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 ```
 
@@ -224,7 +224,7 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 | `-RankMode` | `Balanced` | `Speed`, `Balanced` (70/30), or `Latency` |
 | `-AddBestVpnCount` | `3` | Number of confirmed servers to install; `0` disables |
 | `-VerifyExisting` | off | Standalone existing-profile verification |
-| `-KeepBestExisting` | off | With `-VerifyExisting`, rank working profiles by speed and keep `ALL` or `TOP N` |
+| `-KeepBestExisting` | off | With `-VerifyExisting`, rank working profiles by speed and keep `TOP 3` by default (`ALL` / `TOP N` available) |
 | `-PruneFirst` | off | Verify existing profiles, then run normally |
 | `-ReportOnly` | off | Never delete during the existing-profile phase |
 | `-ListExisting` | off | Inventory only |

@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.2.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.3.0` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -131,6 +131,9 @@ Scenarios:
 | Existing post-test disconnect failure | Disconnect false | `PostTestDisconnectFailed=true`, `INCONCLUSIVE` |
 | Existing duplicate name across phonebooks | Same name in both | Kept and skipped |
 | Speed-ranked TOP N | 4 ACCEPT records with speeds 30/20/10/5 | Keep N fastest; rest `PlannedAction=REMOVE_BY_CHOICE` |
+| Speed-ranked default with 5 ranked | Empty input | Keep TOP 3; the 2 slowest are `REMOVE_BY_CHOICE` |
+| Speed-ranked default with 3 ranked | Empty input | Keep all 3; no `REMOVE_BY_CHOICE` |
+| Speed-ranked default with 2 ranked | Empty input | Keep all 2; no `REMOVE_BY_CHOICE` |
 | Speed-ranked tie | Equal speed, different latency | Lower latency ranks first; null latency last |
 | Speed-ranked no-speed ACCEPT | `DownloadMbps=null` | Kept automatically; never `REMOVE_BY_CHOICE` |
 | Speed-ranked INCONCLUSIVE | `Verdict=INCONCLUSIVE` | Always `KEEP`; never `REMOVE_BY_CHOICE` |
@@ -180,6 +183,9 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I33 | `-KeepBestExisting` without `-VerifyExisting` | Validation V11 error; no test starts |
 | I34 | Existing profile returns RAS 645 for the stored credentials | One immediate fallback with `-Username`/`-Password`; if it connects, route/latency/download tests run and the profile is not `VPN_CONNECT_FAILED` |
 | I35 | Existing profile returns RAS 645 for both credential sources | `VPN_CONNECT_FAILED` / `INCONCLUSIVE`; profile kept; error states that both sources were tried |
+| I36 | `-VerifyExisting -KeepBestExisting` + Enter at the retention prompt + Enter at the final prompt | `TOP 3` selected; removal plan shown; no deletion; every candidate `NOT_REMOVED_BY_USER_CHOICE` |
+| I37 | `-VerifyExisting -KeepBestExisting` + Enter at the retention prompt + `YES` | `TOP 3` kept; other working profiles removed; rejected profiles removed; CSV remains 45 columns |
+| I38 | `-VerifyExisting -KeepBestExisting` with fewer than 3 ranked profiles + Enter | Default behaves as `ALL`; no working profile is offered for removal |
 
 > **Important:** I25 encodes the v16.1.1 partial-download rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 

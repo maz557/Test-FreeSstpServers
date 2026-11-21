@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.2.1 - Reimplementation Specification
+# Test-FreeSstpServers v16.3.0 - Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -9,19 +9,19 @@
 | Item | Value |
 |---|---|
 | Document ID | `PRJ-SSTP-V162-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.2.1` |
-| Document version | `1.4` |
-| Date | 2026-11-19 |
-| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, v16.2.0 speed-ranked retention, and the v16.2.1 RAS 645 credential fallback |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.3.0` |
+| Document version | `1.5` |
+| Date | 2026-11-21 |
+| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, v16.2.0 speed-ranked retention, the v16.2.1 RAS 645 credential fallback, and the v16.3.0 default `TOP 3` retention selection |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,503 lines, 224,023 bytes |
+| Reference size | 4,524 lines, 225,110 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1; v16.2.1 adds an immediate credential fallback for RAS 645 in Section 7.8.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1; v16.2.1 adds an immediate credential fallback for RAS 645 in Section 7.8; v16.3.0 makes `TOP 3` the default retention selection in Section 7.13.1 while keeping the final exact `YES` requirement.
 
 ### Normative language
 
@@ -774,7 +774,7 @@ After merge and port filtering:
 | `-PriorityServer` | string | `''` | `host[:port]` to move to the front of the queue. |
 | `-ListOnly` | switch | false | Acquire, filter, sort, and save a snapshot, then exit. |
 | `-VerifyExisting` | switch | false | Standalone existing-profile verification, then exit. |
-| `-KeepBestExisting` | switch | false | With `-VerifyExisting`, rank working profiles by measured speed and keep `ALL` or `TOP N`. |
+| `-KeepBestExisting` | switch | false | With `-VerifyExisting`, rank working profiles by measured speed and keep `TOP 3` by default (`ALL` / `TOP N` available). |
 | `-PruneFirst` | switch | false | Verify existing profiles, then continue with the normal run. |
 | `-ReportOnly` | switch | false | Report only during the existing-profile phase; never delete. |
 | `-ListExisting` | switch | false | List existing profiles and exit; no dial. |
@@ -896,7 +896,7 @@ These rules run **before** any environment check and MUST preserve both their or
 | Inventory | `-ListExisting` | List both phonebooks | `sstp_existing_profiles_<ts>.csv` |
 | Verify dry-run | `-VerifyExisting -ReportOnly` | Test SSTP profiles; no deletion | `sstp_existing_profile_check_<ts>.csv` |
 | Verify apply | `-VerifyExisting` | Test + summary + `YES` + removal | CSV + removal |
-| Verify + best | `-VerifyExisting -KeepBestExisting` | Test + speed ranking + `ALL`/`TOP N` + `YES` + removal | CSV + removal |
+| Verify + best | `-VerifyExisting -KeepBestExisting` | Test + speed ranking + `TOP 3` default (`ALL`/`TOP N` available) + `YES` + removal | CSV + removal |
 | Prune + normal | `-PruneFirst` | Existing-profile phase + new-server test | Two CSVs |
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion + new-server test | Two CSVs |
 | List only | `-ListOnly` | Acquire/sort/save snapshot | `sstp_server_list_<ts>.csv` |
@@ -920,7 +920,7 @@ These rules run **before** any environment check and MUST preserve both their or
 # Test and remove after an explicit YES.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting
 
-# Test, rank working profiles by speed, and keep ALL or only the fastest N.
+# Test, rank working profiles by speed, and press Enter for TOP 3 or type ALL/TOP N.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 
 # Prune existing profiles, then test 10 Non443 servers from the clipboard.
@@ -1936,9 +1936,11 @@ This step runs after the health summary and before the final removal confirmatio
    - Table: `ProfileName, Scope, ServerAddress, Status`.
    - These records are never added to `notRetained`.
 7. Prompt:
-   `Type ALL to keep every working profile (default), or TOP N to keep only the N fastest (1-<ranked.Count>)`.
+   `Type ALL to keep every working profile, or TOP N to keep only the N fastest (1-<ranked.Count>); press Enter for <default>`.
+   The `<default>` is `TOP 3` when `ranked.Count > 3`; otherwise it is `ALL`, because keeping the three fastest is the same as keeping every ranked profile.
 8. Parse the answer:
-   - Empty or `ALL` (case-insensitive) → keep all.
+   - Empty → use the default: keep `TOP 3` when `ranked.Count > 3`, otherwise keep all.
+   - `ALL` (case-insensitive) → keep all.
    - `TOP N` (case-insensitive, one or more spaces) → `N` must be an integer of at least 1.
      - `N >= ranked.Count` → keep all.
      - `N < ranked.Count` → keep the first `N` ranked profiles.
@@ -1954,7 +1956,7 @@ This step runs after the health summary and before the final removal confirmatio
 - Only `ACCEPT` records with a real `DownloadMbps` value are rankable.
 - `INCONCLUSIVE`, `SKIPPED`, non-SSTP, and `ACCEPT` records with `DownloadMbps=null` are never in `notRetained`.
 - `PlannedAction=REMOVE_BY_CHOICE` MUST NOT appear with `Verdict=INCONCLUSIVE` or `Verdict=SKIPPED`.
-- The exact uppercase `YES` rule is unchanged.
+- The exact uppercase `YES` rule is unchanged. The default `TOP 3` selection only chooses which working profiles join the removal plan; it never deletes anything by itself.
 - If the operator declines the final confirmation, every removal candidate gets `ActionTaken=NOT_REMOVED_BY_USER_CHOICE`.
 - The existing-profile CSV keeps its 45 columns; only the `PlannedAction` value set grows.
 

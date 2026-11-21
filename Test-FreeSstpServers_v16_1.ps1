@@ -1,3 +1,7 @@
+# v16.3.0: v16.2.1 + TOP 3 as the default retention selection.
+#      - Pressing Enter at the retention prompt now keeps the three fastest
+#        working profiles. The final removal plan still requires the exact
+#        uppercase YES; Enter at that prompt keeps everything.
 # v16.2.1: v16.2.0 + a credential fallback for RAS 645 on existing profiles.
 #      - Windows can return RAS 645 ("internal authentication error") when a
 #        saved profile has no usable stored credentials. The tester now retries
@@ -313,11 +317,13 @@
 
 .PARAMETER KeepBestExisting
     Used with -VerifyExisting. After the verification, working profiles are
-    ranked by measured download speed. Type ALL to keep every working profile
-    (default), or TOP N to keep only the N fastest. Working profiles that are
-    not retained join the removal plan, but nothing is removed until the final
-    exact uppercase YES. Profiles with no usable speed sample, INCONCLUSIVE
-    profiles, skipped profiles, and non-SSTP profiles are always kept.
+    ranked by measured download speed. Press Enter to keep the three fastest
+    (TOP 3, or all when fewer than three are rankable), type ALL to keep every
+    working profile, or type TOP N to keep only the N fastest. Working profiles
+    that are not retained join the removal plan, but nothing is removed until
+    the final exact uppercase YES. Profiles with no usable speed sample,
+    INCONCLUSIVE profiles, skipped profiles, and non-SSTP profiles are always
+    kept.
     For a more stable ranking, use -SpeedSamples 2 or 3.
     Cannot be combined with -ReportOnly or -PruneFirst.
 
@@ -379,7 +385,9 @@
     .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -KeepBestExisting
 
     Test existing SSTP profiles, rank the working ones by measured download
-    speed, and choose ALL or TOP N. Nothing is removed until the final YES.
+    speed, and press Enter to keep the three fastest. Type ALL to keep every
+    working profile or TOP N for a different count. Nothing is removed until
+    the final YES.
 
 .EXAMPLE
     .\Test-FreeSstpServers_v16_1.ps1 -PruneFirst -UseClipboard -PortMode Non443 -MaxServers 10
@@ -446,7 +454,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.2.1
+    Version  : v16.3.0
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -2948,17 +2956,28 @@ function Get-ExistingProfileRetentionPlan {
 }
 
 function Resolve-ExistingProfileRetentionSelection {
-    # Parses the post-test retention prompt. Empty input and ALL keep every
-    # ranked profile. TOP N keeps the N fastest; N must be at least 1 and
-    # smaller than the ranked count. Invalid input is returned with Valid=false.
+    # Parses the post-test retention prompt. Empty input keeps the three
+    # fastest ranked profiles by default; ALL keeps every ranked profile.
+    # TOP N keeps the N fastest; N must be at least 1 and smaller than the
+    # ranked count. Invalid input is returned with Valid=false.
     param(
         [AllowEmptyString()][string]$Selection,
-        [Parameter(Mandatory)][int]$RankedCount
+        [Parameter(Mandatory)][int]$RankedCount,
+        [int]$DefaultTopN = 3
     )
 
     $text = ([string]$Selection).Trim()
     $text = [regex]::Replace($text, '\s+', ' ')
-    if ([string]::IsNullOrWhiteSpace($text) -or $text -match '^(?i:all)$') {
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        $effectiveDefault = [Math]::Min([Math]::Max(1, $DefaultTopN), $RankedCount)
+        return [pscustomobject]@{
+            Valid = $true
+            KeepAll = ($effectiveDefault -ge $RankedCount)
+            TopN = $effectiveDefault
+            Error = ''
+        }
+    }
+    if ($text -match '^(?i:all)$') {
         return [pscustomobject]@{ Valid = $true; KeepAll = $true; TopN = $RankedCount; Error = '' }
     }
 
@@ -2988,7 +3007,7 @@ function Invoke-ExistingProfileVerification {
     #   1. collect Windows SSTP VPN profiles (both phonebooks),
     #   2. confirm the no-VPN baseline interactively,
     #   3. test every profile with Test-ExistingSstpProfile,
-    #   4. optionally rank working profiles and ask ALL/TOP N,
+    #   4. optionally rank working profiles and ask ALL/TOP N (default TOP 3),
     #   5. show the removal plan, ask for an explicit YES, remove the selected
     #      profiles, and save the CSV report; return the counters.
     param(
@@ -3029,7 +3048,7 @@ function Invoke-ExistingProfileVerification {
     Write-Host 'The test checks TCP, a real SSTP dial, IPv4/IPv6 public-IP changes, tunnel latency, and a download test.' -ForegroundColor DarkGray
     Write-Host ("Removal mode: {0}. Profiles are removed only after the summary and an explicit YES." -f $ExistingRemovalMode) -ForegroundColor DarkGray
     if ($KeepBestExisting) {
-        Write-Host 'Speed-ranked retention: enabled. After testing, choose ALL or TOP N; no working profile is removed without the final YES.' -ForegroundColor DarkGray
+        Write-Host 'Speed-ranked retention: enabled. After testing, press Enter for TOP 3 or type ALL / TOP N; no working profile is removed without the final YES.' -ForegroundColor DarkGray
     }
 
     $allProfiles = @(Get-ExistingSstpVpnProfiles)
@@ -3346,8 +3365,10 @@ function Invoke-ExistingProfileVerification {
                     $retentionPlan.Unranked | Select-Object ProfileName, Scope, ServerAddress, Status | Format-Table -AutoSize | Out-Host
                 }
 
+                $defaultTopN = [Math]::Min(3, $retentionPlan.Ranked.Count)
+                $defaultLabel = if ($defaultTopN -ge $retentionPlan.Ranked.Count) { 'ALL' } else { 'TOP 3' }
                 while ($true) {
-                    $selectionText = ([string](Read-Host ("Type ALL to keep every working profile (default), or TOP N to keep only the N fastest (1-{0})" -f $retentionPlan.Ranked.Count))).Trim()
+                    $selectionText = ([string](Read-Host ("Type ALL to keep every working profile, or TOP N to keep only the N fastest (1-{0}); press Enter for {1}" -f $retentionPlan.Ranked.Count, $defaultLabel))).Trim()
                     $retentionSelection = Resolve-ExistingProfileRetentionSelection -Selection $selectionText -RankedCount $retentionPlan.Ranked.Count
                     if ($retentionSelection.Valid) { break }
                     Write-Host $retentionSelection.Error -ForegroundColor Yellow
