@@ -1,10 +1,10 @@
-# Test-FreeSstpServers v16.3.0
+# Test-FreeSstpServers v16.3.1
 
 > **Authorship.** I designed and tested this program; AI wrote the code under my direction. The behavior contract is documented in [the specification](docs/SPECIFICATION.md), and the [porting guide](docs/PORTING.md) plus the [AI porting prompt](docs/PORTING-PROMPT.md) explain how to reimplement it in other programming languages.
 
 A safety-first PowerShell tool for Windows that discovers free SSTP VPN servers, proves that they actually carry traffic, measures real tunnel latency and download speed, and installs the best working endpoints as Windows VPN profiles. It can also audit and clean up existing SSTP profiles without guessing.
 
-Version 16.3.0 makes `TOP 3` the default retention choice for existing profiles: after testing, press Enter to keep the three fastest working profiles, or type `ALL` / `TOP N`. The final removal plan still requires the exact uppercase `YES`, and pressing Enter there keeps everything. It also includes the v16.2.1 RAS 645 credential fallback and the v16.2.0 speed-ranked retention. All other v16.2.1 behavior is unchanged.
+Version 16.3.1 fixes clipboard handling for plain host lists: the normal run now accepts copied `host[:port]` lists such as the Delta-Kronecker `sstp_hosts.txt` file, and the normal launcher uses that list as the only source. The v16.3.0 `TOP 3` retention default, the v16.2.1 RAS 645 credential fallback, and the v16.2.0 speed-ranked retention are unchanged.
 
 ---
 
@@ -29,7 +29,7 @@ Version 16.3.0 makes `TOP 3` the default retention choice for existing profiles:
 
 ## Features
 
-- Fetches free SSTP endpoints from the ipspeed.info table, a VPN Gate mirror, a local HTML capture, the clipboard, a saved CSV snapshot, or a plain host list.
+- Fetches free SSTP endpoints from the ipspeed.info table, a VPN Gate mirror, a local HTML capture, the clipboard (including plain `host[:port]` lists), a saved CSV snapshot, or a plain host list.
 - Parses FQDN, IPv4, and bracketed IPv6 endpoints with optional non-443 ports.
 - Merges duplicate endpoints, keeping the entry with the lower published PING.
 - Filters by port (`All`, `443`, `Non443`) and shortlists by the source PING, then by uptime.
@@ -73,12 +73,13 @@ cd C:\path\to\Test-FreeSstpServers
 # 4. Safest first maintenance run: test existing SSTP profiles, delete nothing.
 .\Test-FreeSstpServers_v16_1.ps1 -VerifyExisting -ReportOnly
 
-# 5. Normal test: use the server list copied to the clipboard.
+# 5. Normal test: use only the server list copied to the clipboard.
+#    Plain host lists such as Delta-Kronecker sstp_hosts.txt are supported.
 #    Non-443 ports only, at most 30 servers, install the best 3.
-.\Test-FreeSstpServers_v16_1.ps1 -UseClipboard -PortMode Non443 -MaxServers 30 -AddBestVpnCount 3
+.\Test-FreeSstpServers_v16_1.ps1 -UseClipboard -NoExtraSource -PortMode Non443 -MaxServers 30 -AddBestVpnCount 3
 ```
 
-On a fresh machine, run the normal test without `-UseClipboard` first; the script fetches the primary list automatically:
+On a fresh machine without a list to copy, run the normal test without `-UseClipboard` first; the script fetches the primary list automatically:
 
 ```powershell
 .\Test-FreeSstpServers_v16_1.ps1 -PortMode Non443 -MaxServers 10
@@ -88,7 +89,7 @@ The repository also includes double-click launchers that request elevation autom
 
 | Launcher | What it does |
 |---|---|
-| `Run-Normal.cmd` | Clipboard list, `Non443`, 30 servers, add top 3 |
+| `Run-Normal.cmd` | Clipboard list only (plain host lists supported), `Non443`, 30 servers, add top 3 |
 | `Run-ListExisting.cmd` | Inventory only; no dial, no change |
 | `Run-ReportOnly.cmd` | Existing-profile test with `-ReportOnly` |
 | `Run-ApplyRemovals.cmd` | Existing-profile test with speed-ranked `ALL` / `TOP N` retention (default `TOP 3`) and controlled removal after `YES` |
@@ -106,7 +107,7 @@ The repository also includes double-click launchers that request elevation autom
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion, then normal run | Two CSVs |
 | List only | `-ListOnly` | Fetch, filter, sort, save snapshot, exit | `sstp_server_list_<ts>.csv` |
 | Snapshot test | `-ServerListCsv <path>` | Test a saved snapshot; no web fetch | Results CSV |
-| Clipboard | `-UseClipboard` | Clipboard, then primary, then extra, then final fallback | Results CSV |
+| Clipboard | `-UseClipboard` | Clipboard (HTML, VPN Gate text, or plain host list); primary/extra/final only if the clipboard is unusable | Results CSV |
 | Extra only | `-ExtraSourceOnly` | VPN Gate source only | Results CSV |
 | Final only | `-FinalFallbackOnly` | Plain host list only | Results CSV |
 | Normal | no special mode | Primary + supplementary sources | Results CSV + new profiles |
@@ -213,7 +214,7 @@ New Windows profiles are named `<country> - <server host>`; non-443 endpoints ke
 |---|---|---|
 | `-Url` | `https://ipspeed.info/free-sstp.php` | Primary list page |
 | `-ExtraSourceUrl` | VPN Gate mirror | One or more supplementary sources |
-| `-UseClipboard` | off | Read the list from the clipboard |
+| `-UseClipboard` | off | Read the list from the clipboard; supports HTML tables, VPN Gate text, and plain `host[:port]` lists |
 | `-ServerListCsv` | empty | Reuse a saved snapshot; no web fetch |
 | `-PortMode` / `-PortFilter` | `All` | `All`, `443`, or `Non443` |
 | `-MaxServers` | `0` (all) | Test only the first N candidates after sorting |

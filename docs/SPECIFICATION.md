@@ -1,4 +1,4 @@
-# Test-FreeSstpServers v16.3.0 - Reimplementation Specification
+# Test-FreeSstpServers v16.3.1 - Reimplementation Specification
 
 > **Purpose.** This document is a complete, language-agnostic behavior contract for reimplementing `Test-FreeSstpServers_v16_1.ps1` in another programming language without changing its test logic, safety rules, status strings, CSV columns, or existing-profile removal behavior. Together with [PORTING-PROMPT.md](PORTING-PROMPT.md), it can be given to an AI coding assistant to generate a port in another language.
 
@@ -9,19 +9,19 @@
 | Item | Value |
 |---|---|
 | Document ID | `PRJ-SSTP-V162-EN` |
-| Title | Reimplementation specification for `Test-FreeSstpServers v16.3.0` |
-| Document version | `1.5` |
+| Title | Reimplementation specification for `Test-FreeSstpServers v16.3.1` |
+| Document version | `1.6` |
 | Date | 2026-11-21 |
-| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, v16.2.0 speed-ranked retention, the v16.2.1 RAS 645 credential fallback, and the v16.3.0 default `TOP 3` retention selection |
+| Status | Baseline - includes v16.1.1 profile naming, the v16.1.2 fallback port confirmation, v16.2.0 speed-ranked retention, the v16.2.1 RAS 645 credential fallback, the v16.3.0 default `TOP 3` retention selection, and the v16.3.1 plain-host-list clipboard parser |
 | Language | English |
 | Audience | Developers, software architects, test engineers, operations, product owner |
 | Authorship | Designed and tested by maz557; code written by AI under the maintainer's direction |
 | Reference behavior | `Test-FreeSstpServers_v16_1.ps1` in this repository |
-| Reference size | 4,524 lines, 225,110 bytes |
+| Reference size | 4,545 lines, 226,428 bytes |
 | Reference environment | Windows 10/11, PowerShell 7.6.9, Administrator session |
 | Target language | Not selected; this document is language-agnostic |
 
-The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1; v16.2.1 adds an immediate credential fallback for RAS 645 in Section 7.8; v16.3.0 makes `TOP 3` the default retention selection in Section 7.13.1 while keeping the final exact `YES` requirement.
+The repository copy of the script is the reference implementation for this specification. One help-text example path was sanitized before publication. v16.1.1 introduced the new profile naming rule in Section 9.8; v16.1.2 adds the final-fallback port confirmation in Section 6.1; v16.2.0 adds optional speed-ranked retention for existing profiles in Section 7.13.1; v16.2.1 adds an immediate credential fallback for RAS 645 in Section 7.8; v16.3.0 makes `TOP 3` the default retention selection in Section 7.13.1 while keeping the final exact `YES` requirement; v16.3.1 adds plain-host-list parsing to the clipboard path in Section 4.4 and the normal launchers use that list as the only source.
 
 ### Normative language
 
@@ -76,7 +76,7 @@ Behavioral parity is more important than internal structure. A port MAY use diff
 ### 1.2. In scope
 
 - Windows 10/11 execution.
-- Free SSTP server discovery from the primary list, VPN Gate, clipboard, local HTML, CSV snapshots, and a plain host list.
+- Free SSTP server discovery from the primary list, VPN Gate, clipboard (including plain host lists), local HTML, CSV snapshots, and a plain host list.
 - TCP probing, temporary SSTP profile creation, `rasdial`, public-IP route verification, tunnel latency, and tunnel download measurement.
 - Scoring and ranking.
 - Adding the best confirmed servers as per-user Windows VPN profiles.
@@ -151,7 +151,7 @@ The tool is a **local orchestrator**, not a network service. Every measurement r
 |---|---|---|---|
 | `ParameterBinder` | Bind CLI arguments, validate type and range | Arguments | `Options` |
 | `ModeSelector` | Select mode by precedence | `Options` | `RunMode` |
-| `SourceFetcher` | Download pages, fall back to Jina, read HTML/clipboard | URL/file | Raw text |
+| `SourceFetcher` | Download pages, fall back to Jina, read HTML/clipboard/plain lists | URL/file | Raw text |
 | `ServerListParser` | Detect source type and build `Server` records | Raw text | `Server[]` |
 | `ListMerger` | Deduplicate by `host:port`, prefer lower PING | Several `Server[]` | `Server[]` |
 | `Shortlister` | Port filter, PING/uptime sort, Priority, Max | `Server[]` | `Server[]` |
@@ -583,15 +583,18 @@ VPN Gate publishes only servers that have an `MS-SSTP` column and the phrase `SS
 
 ### 4.4. Parser selection (`Convert-AnyServerListContent`)
 
-Both parsers run on the content:
+Both structured parsers run on the content:
 
 - If the VPN Gate parser produced at least one result and its count is ≥ the generic parser's count, use the VPN Gate result.
 - Otherwise, if the generic parser produced a result, use it.
+- Otherwise, if the caller set `AllowPlainHostList` (the clipboard path), run `Convert-PlainSstpHostListContent` and return its result.
 - Otherwise, return the VPN Gate result (even if empty).
 
-This rule handles pages that look like a generic table and also contain an SSTP column.
+This rule handles pages that look like a generic table and also contain an SSTP column. The permissive plain-list parser is deliberately limited to clipboard content; ordinary web pages must not turn navigation links or prose into fake servers.
 
 ### 4.5. Plain host-list parser (`Convert-PlainSstpHostListContent`)
+
+This parser is used for the `-FinalFallbackUrl` source and for clipboard text when `AllowPlainHostList` is set.
 
 Format of `sstp_hosts.txt`:
 
@@ -645,7 +648,7 @@ Rules:
 | `-FinalFallbackOnly` | Only `FinalFallbackUrl` |
 | `-ServerListCsv` | Only the CSV snapshot; no web source |
 | `-HtmlFile` | Local HTML + extra sources |
-| `-UseClipboard` | Clipboard; if empty/invalid, primary; then extra; then final |
+| `-UseClipboard` | Clipboard (HTML, VPN Gate text, or plain host list); if empty/invalid, primary; then extra; then final |
 | `-ListOnly` | Normal acquisition, then exit |
 
 **Important:** if `-UseClipboard` is combined with `-ServerListCsv`, the CSV wins because the clipboard branch requires an empty `ServerListCsv`.
@@ -768,7 +771,7 @@ After merge and port filtering:
 | `-ExtraSourceOnly` | switch | false | Use only supplementary sources; no primary/clipboard/HTML/CSV. |
 | `-FinalFallbackOnly` | switch | false | Use only `-FinalFallbackUrl`. |
 | `-FinalFallbackUrl` | string | `https://raw.githubusercontent.com/Delta-Kronecker/Vpn-Gate/refs/heads/main/sstp_hosts.txt` | Plain host list for the last fallback. |
-| `-UseClipboard` | switch | false | Read the list from the clipboard. |
+| `-UseClipboard` | switch | false | Read the list from the clipboard; supports HTML tables, VPN Gate text, and plain `host[:port]` lists. |
 | `-HtmlFile` | string | `''` | Path to a saved HTML capture. |
 | `-ServerListCsv` | string | `''` | Path to a snapshot CSV; no web source is fetched. |
 | `-PriorityServer` | string | `''` | `host[:port]` to move to the front of the queue. |
@@ -901,7 +904,7 @@ These rules run **before** any environment check and MUST preserve both their or
 | Prune dry-run | `-PruneFirst -ReportOnly` | Existing-profile phase without deletion + new-server test | Two CSVs |
 | List only | `-ListOnly` | Acquire/sort/save snapshot | `sstp_server_list_<ts>.csv` |
 | Snapshot test | `-ServerListCsv <path>` | Test from CSV; no web | Results CSV |
-| Clipboard | `-UseClipboard` | Clipboard → primary → extra → final | Results CSV |
+| Clipboard | `-UseClipboard` | Clipboard (HTML, VPN Gate text, or plain list) → primary → extra → final | Results CSV |
 | Extra only | `-ExtraSourceOnly` | VPN Gate only | Results CSV |
 | Final only | `-FinalFallbackOnly` | Plain list only | Results CSV |
 | Normal | no special mode | Primary + extra | Results CSV + new profiles |

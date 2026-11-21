@@ -1,3 +1,10 @@
+# v16.3.1: v16.3.0 + clipboard parsing for plain host lists.
+#      - The clipboard path now accepts newline-separated host / host:port
+#        lists such as the Delta-Kronecker sstp_hosts.txt file, not only
+#        HTML tables and VPN Gate text.
+#      - The normal launchers pass -NoExtraSource so a valid clipboard list is
+#        used alone; if the clipboard is unusable, the primary URL is still
+#        tried as a fallback.
 # v16.3.0: v16.2.1 + TOP 3 as the default retention selection.
 #      - Pressing Enter at the retention prompt now keeps the three fastest
 #        working profiles. The final removal plan still requires the exact
@@ -117,7 +124,8 @@
          first (standalone mode exits; -PruneFirst continues).
       1. Obtain the server list from the primary source (web page, clipboard,
          saved HTML, or a local CSV snapshot from a previous run) and, by default,
-         also from the supplementary VPN Gate source (-ExtraSourceUrl). Merge both
+         also from the supplementary VPN Gate source (-ExtraSourceUrl). Clipboard
+         text may be an HTML table, VPN Gate text, or a plain host list. Merge both
          lists and remove duplicate host:port endpoints. If every earlier source
          is empty, try the final fallback plain host list (-FinalFallbackUrl); a
          port-443-only fallback with -PortMode Non443 asks before the filter is
@@ -283,11 +291,13 @@
 
 .PARAMETER UseClipboard
     Read the server list from text copied from the browser instead of downloading
-    the page. On the page, wait for the table, then press Ctrl+A and Ctrl+C.
-    If the clipboard is empty, unreadable, or holds no recognizable server rows,
-    the primary -Url is fetched next. The supplementary -ExtraSourceUrl source(s)
-    are always merged afterwards, and if everything is still empty the
-    -FinalFallbackUrl host list is tried last.
+    the page. Plain newline-separated host lists (host or host:port, with optional
+    '#' comments and '=== Country ===' sections) are supported, including the
+    Delta-Kronecker sstp_hosts.txt list. On a table page, wait for the table, then
+    press Ctrl+A and Ctrl+C. If the clipboard is empty, unreadable, or holds no
+    recognizable server rows, the primary -Url is fetched next. The supplementary
+    -ExtraSourceUrl source(s) are merged unless -NoExtraSource is specified, and if
+    everything is still empty the -FinalFallbackUrl host list is tried last.
 
 .PARAMETER ListOnly
     Retrieve, filter, sort, and save the server-list snapshot, then exit without
@@ -405,7 +415,9 @@
 .EXAMPLE
     .\Test-FreeSstpServers_v16_1.ps1 -UseClipboard -NoExtraSource -PortMode Non443 -MaxServers 10
 
-    Same run, but use only the clipboard/primary list and skip the VPN Gate source.
+    Same run, but use only the clipboard list and skip the VPN Gate source.
+    Plain newline-separated host lists such as the Delta-Kronecker
+    sstp_hosts.txt file are accepted.
 
 .EXAMPLE
     .\Test-FreeSstpServers_v16_1.ps1 -ExtraSourceUrl 'http://v-dot-pn-ams2.opengw.net:34637/en/' -ListOnly
@@ -454,7 +466,7 @@
     to five verified profiles.
 
 .NOTES
-    Version  : v16.3.0
+    Version  : v16.3.1
     Requires : Windows 10/11, PowerShell 7+, Administrator
     The results CSV stays sorted by DownloadMbps descending even when -RankMode is
     Balanced or Latency; the console table and Windows-profile selection use
@@ -1059,7 +1071,8 @@ function Convert-VpnGateServerListContent {
 function Convert-AnyServerListContent {
     param(
         [string]$Content,
-        [string]$DefaultSource = 'ipspeed.info'
+        [string]$DefaultSource = 'ipspeed.info',
+        [switch]$AllowPlainHostList
     )
 
     if ([string]::IsNullOrWhiteSpace($Content)) { return @() }
@@ -1071,6 +1084,14 @@ function Convert-AnyServerListContent {
     # dedicated SSTP-column parser when it found at least as many endpoints.
     if ($vpnGate.Count -gt 0 -and $vpnGate.Count -ge $standard.Count) { return $vpnGate }
     if ($standard.Count -gt 0) { return $standard }
+
+    # Clipboard text can be a plain newline-separated host list such as the
+    # Delta-Kronecker sstp_hosts.txt file. Only enable this permissive parser
+    # for explicit plain-list sources (the clipboard) so ordinary web pages do
+    # not turn navigation links into fake servers.
+    if ($AllowPlainHostList) {
+        return @(Convert-PlainSstpHostListContent -Content $Content -SourceName $DefaultSource)
+    }
     return $vpnGate
 }
 
@@ -3602,7 +3623,7 @@ if ($FinalFallbackOnly) {
     $clipboardServers = 0
     try {
         $clipboardContent = Get-ClipboardText
-        $clipServers = @(Convert-AnyServerListContent -Content ([string]$clipboardContent) -DefaultSource 'clipboard')
+        $clipServers = @(Convert-AnyServerListContent -Content ([string]$clipboardContent) -DefaultSource 'clipboard' -AllowPlainHostList)
         if ($clipServers.Count -eq 0) {
             throw 'Clipboard text did not contain recognizable server rows. In Edge, wait until the actual table is visible, click the page, press Ctrl+A and Ctrl+C, then rerun.'
         }
@@ -3727,7 +3748,7 @@ while ($servers.Count -eq 0) {
         $allLists = [System.Collections.Generic.List[object]]::new()
         try {
             $clipboardContent = Get-ClipboardText
-            $clipServers = @(Convert-AnyServerListContent -Content ([string]$clipboardContent) -DefaultSource 'clipboard')
+            $clipServers = @(Convert-AnyServerListContent -Content ([string]$clipboardContent) -DefaultSource 'clipboard' -AllowPlainHostList)
             if ($clipServers.Count -eq 0) { throw 'No recognizable server rows were found in the clipboard. Confirm that the table was visible and copied.' }
             foreach ($srv in $clipServers) { $allLists.Add($srv) }
             Write-Host ("Retrieved {0} server(s) from browser clipboard text." -f $clipServers.Count) -ForegroundColor Green

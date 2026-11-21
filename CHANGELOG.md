@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 semantic versioning for its public releases.
 
+## [16.3.1] - 2026-11-21
+
+### Fixed
+
+- `-UseClipboard` now recognizes plain newline-separated host lists
+  (`host` or `host:port`, optional `#` comments and `=== Country ===`
+  section headers), including the Delta-Kronecker `sstp_hosts.txt` file.
+  Previously only HTML tables and VPN Gate text were parsed, so this list
+  produced zero rows and the script fell back to the primary source.
+
+### Changed
+
+- `Run-Normal.cmd` and the root normal launcher now pass `-NoExtraSource`,
+  so a valid clipboard list is used as the only source. If the clipboard is
+  empty or unrecognized, the primary URL is still tried; VPN Gate is skipped.
+- Web-page parsing is unchanged: the permissive plain-list parser is enabled
+  only for clipboard content, so navigation links are not treated as servers.
+
+### Compatibility
+
+- No new parameters; the script still has 42 parameters.
+- CSV schemas, status strings, ranking, and deletion safety rules are
+  unchanged.
+- The default `TOP 3` retention from v16.3.0 is unchanged.
+
 ## [16.3.0] - 2026-11-21
 
 ### Changed
@@ -167,6 +192,7 @@ semantic versioning for its public releases.
   source, merge by host:port, source-PING shortlist, real tunnel latency,
   partial-download speed samples, ranking, and top-N profile installation.
 
+[16.3.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.3.1
 [16.3.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.3.0
 [16.2.1]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.1
 [16.2.0]: https://github.com/maz557/Test-FreeSstpServers/releases/tag/v16.2.0

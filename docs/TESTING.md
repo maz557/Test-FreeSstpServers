@@ -1,6 +1,6 @@
 # Testing and Acceptance Guide
 
-> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.3.0` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
+> **Purpose.** This document defines how to verify that `Test-FreeSstpServers v16.3.1` and any port behave correctly. The reference script ships without an automated test suite; the checks below are the acceptance plan. The normative behavior is in [SPECIFICATION.md](SPECIFICATION.md).
 
 ---
 
@@ -139,6 +139,8 @@ Scenarios:
 | Speed-ranked INCONCLUSIVE | `Verdict=INCONCLUSIVE` | Always `KEEP`; never `REMOVE_BY_CHOICE` |
 | Speed-ranked paused run | `stopFurtherChecks=true` | Retention disabled; only rejected profiles can be removed |
 | Speed-ranked decline | `TOP N` then Enter at final prompt | All candidates `NOT_REMOVED_BY_USER_CHOICE`; no deletion |
+| Clipboard plain host list | Delta-Kronecker `sstp_hosts.txt` copied to the clipboard | All published servers parsed (103 at the time of writing); `#` comments and `=== Country ===` headers handled; no primary/extra fetch with `-NoExtraSource` |
+| Clipboard HTML table | Browser-copied ipspeed.info table | Existing table parser still wins; plain-list fallback does not add navigation links |
 
 ---
 
@@ -186,6 +188,9 @@ Run these on a VM or a disposable test machine with Administrator access.
 | I36 | `-VerifyExisting -KeepBestExisting` + Enter at the retention prompt + Enter at the final prompt | `TOP 3` selected; removal plan shown; no deletion; every candidate `NOT_REMOVED_BY_USER_CHOICE` |
 | I37 | `-VerifyExisting -KeepBestExisting` + Enter at the retention prompt + `YES` | `TOP 3` kept; other working profiles removed; rejected profiles removed; CSV remains 45 columns |
 | I38 | `-VerifyExisting -KeepBestExisting` with fewer than 3 ranked profiles + Enter | Default behaves as `ALL`; no working profile is offered for removal |
+| I39 | Copy the Delta-Kronecker `sstp_hosts.txt` list, then run the normal launcher | All published servers parsed from the clipboard; the primary and VPN Gate sources are not contacted; `-PortMode All` tests the copied list |
+| I40 | `-UseClipboard -NoExtraSource -ListOnly` with a plain host list in the clipboard | Snapshot CSV contains the clipboard endpoints; no HTTP request is made to the primary or VPN Gate source |
+| I41 | `-UseClipboard -NoExtraSource` with an empty or unrelated clipboard | Warning; the primary URL is tried as a fallback; VPN Gate is skipped |
 
 > **Important:** I25 encodes the v16.1.1 partial-download rule. A partial download that produced real bytes is accepted. Do not require the full requested transfer.
 
